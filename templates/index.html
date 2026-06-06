@@ -305,7 +305,10 @@ function updateCountdown() {
 async function doRefresh() {
   document.getElementById('content').innerHTML = '<div class="loading"><div class="spinner"></div><div style="color:var(--text2);font-size:13px;">正在刷新分析...</div></div>';
   try {
-    const r = await (await fetch('/api/refresh')).json();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    const r = await (await fetch('/api/refresh', { signal: controller.signal })).json();
+    clearTimeout(timeout);
     renderResult(r);
     const s = await (await fetch('/api/status')).json();
     currentInterval = s.refresh_interval||60; refreshCountdown = currentInterval;
@@ -319,7 +322,37 @@ document.addEventListener('touchstart', e => { touchStartY = e.touches[0].client
 document.addEventListener('touchend', e => { if(window.scrollY===0 && e.changedTouches[0].clientY-touchStartY>80) doRefresh(); });
 
 async function init() {
-  try { renderResult(await (await fetch('/api/screen')).json()); } catch(e) {}
+  const c = document.getElementById('content');
+  
+  // Retry fetch with timeout
+  let loaded = false;
+  for (let retry = 0; retry < 3 && !loaded; retry++) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      const resp = await fetch('/api/screen', { signal: controller.signal });
+      clearTimeout(timeout);
+      
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data && data.stocks && data.stocks.length > 0) {
+          renderResult(data);
+          loaded = true;
+        } else if (data && data.success) {
+          renderResult(data);
+          loaded = true;
+        }
+      }
+    } catch(e) {
+      console.log('Fetch attempt ' + (retry+1) + ' failed: ' + e.message);
+      if (retry < 2) await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+  
+  if (!loaded) {
+    c.innerHTML = '<div class="empty"><div class="icon">⏳</div><div class="title">连接中...</div><div class="desc">正在等待服务器响应，请稍后刷新页面</div></div>';
+  }
+  
   try { const s = await (await fetch('/api/status')).json(); currentInterval=s.refresh_interval||60; refreshCountdown=currentInterval; } catch(e) {}
   connectSSE();
   countdownTimer = setInterval(updateCountdown, 1000);
