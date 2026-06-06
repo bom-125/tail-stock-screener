@@ -291,7 +291,35 @@ function renderResult(data, isSse) {
         h += '</div>';
     }
     
+    // SEPA badges (九步法指标)
+    const sepa = s.sepa;
+    if (sepa) {
+        h += '<div class="sepa-badges">';
+        if (sepa.above_ma50 && sepa.above_ma150) {
+            h += '<span class="sepa-badge good">MA多头排列</span>';
+        } else if (sepa.above_ma50) {
+            h += '<span class="sepa-badge good">站上MA50</span>';
+        }
+        if (sepa.has_limit_up) {
+            h += '<span class="sepa-badge good">涨停基因('+sepa.limit_up_count+'次)</span>';
+        }
+        if (sepa.volume_expanding) {
+            h += '<span class="sepa-badge good">量能放大'+sepa.vol_ratio_50d.toFixed(1)+'x</span>';
+        }
+        if (sepa.near_20d_high) {
+            h += '<span class="sepa-badge good">接近新高</span>';
+        }
+        if (sepa.has_long_upper_shadow) {
+            h += '<span class="sepa-badge warn">长上影</span>';
+        }
+        if (!sepa.above_ma50) {
+            h += '<span class="sepa-badge warn">低于MA50</span>';
+        }
+        h += '</div>';
+    }
+    
     // Sell advice box (卖出建议)
+        // Sell advice box (卖出建议)
     const sellAdvice = s.sell_advice;
     if (sellAdvice) {
         h += '<div class="sell-box">';

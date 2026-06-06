@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """灏剧洏閫夎偂寮曟搸 v3.1 - 浜旂淮缁煎悎璇勫垎锛堣祫閲戞祦鍚戝疄娴嬪彲鐢級"""
 import os
 for pv in ['HTTP_PROXY','HTTPS_PROXY','http_proxy','https_proxy','ALL_PROXY','all_proxy']:
@@ -17,18 +17,24 @@ import re, time, warnings, io, sys
 warnings.filterwarnings('ignore')
 
 class ScreenerConfig:
-    PCT_CHANGE_MIN = 2.0
-    PCT_CHANGE_MAX = 6.5
-    VOLUME_RATIO_MIN = 1.2
-    TURNOVER_MIN = 3.0
-    TURNOVER_MAX = 15.0
-    MARKET_CAP_MIN = 30
-    MARKET_CAP_MAX = 500
+    # SEPA / 9-Step Filter v4.0
+    PCT_CHANGE_MIN = 3.0
+    PCT_CHANGE_MAX = 5.0
+    VOLUME_RATIO_MIN = 1.0
+    TURNOVER_MIN = 5.0
+    TURNOVER_MAX = 10.0
+    MARKET_CAP_MIN = 50
+    MARKET_CAP_MAX = 200
+    AMPLITUDE_MAX = 8.0
     PRICE_MIN = 5.0
     PRICE_MAX = 80.0
     EXCLUDE_ST = True
     EXCLUDE_CHINEXT = True
     EXCLUDE_STAR = True
+    MA_SHORT = 50
+    MA_LONG = 150
+    LIMIT_UP_DAYS = 20
+    VOLUME_EXPAND_RATIO = 1.5
     TOP_N = 30
 
 _stock_cache = {'codes': None, 'time': 0}
@@ -117,6 +123,8 @@ def screen_stocks(df):
         r = r[~r['code'].str.startswith(('688','689'))].copy()
     r = r[(r['pct_change']>=cfg.PCT_CHANGE_MIN)&(r['pct_change']<=cfg.PCT_CHANGE_MAX)].copy()
     r = r[(r['price']>=cfg.PRICE_MIN)&(r['price']<=cfg.PRICE_MAX)].copy()
+    if 'amplitude' in r.columns:
+        r = r[r['amplitude'] <= cfg.AMPLITUDE_MAX].copy()
     if 'high' in r.columns and 'low' in r.columns:
         r = r[~((r['high']==r['low'])&(r['pct_change'].abs()>9.5))].copy()
     return r
@@ -149,6 +157,67 @@ def fetch_fund_flow_batch(codes):
         except: pass
         time.sleep(0.08)
     return results
+
+def fetch_kline_batch(codes, days=160):
+    s = requests.Session(); s.trust_env = False
+    s.headers.update({"User-Agent":"Mozilla/5.0","Referer":"https://data.eastmoney.com/"})
+    results = {}
+    for code in codes:
+        try:
+            market = 0 if code.startswith(("0","3","2")) else 1
+            url = f"https://push2his.eastmoney.com/api/qt/stock/kline/get?secid={market}.{code}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57&klt=101&fqt=0&end=20500101&lmt={days}"
+            r = s.get(url, timeout=10)
+            if r.status_code == 200:
+                klines = r.json().get("data", {}).get("klines", [])
+                if klines:
+                    parsed = []
+                    for k in klines:
+                        parts = k.split(",")
+                        parsed.append({"date": parts[0], "open": float(parts[1]), "close": float(parts[2]), "high": float(parts[3]), "low": float(parts[4]), "volume": float(parts[5]), "amount": float(parts[6]) if len(parts) > 6 else 0})
+                    results[code] = parsed
+        except:
+            pass
+    return results
+
+
+def calc_sepa_metrics(code, kline_data, current_price):
+    cfg = ScreenerConfig()
+    result = {"above_ma50": False, "above_ma150": False, "ma50": None, "ma150": None, "has_limit_up": False, "limit_up_count": 0, "volume_expanding": False, "vol_ratio_50d": 0, "near_20d_high": False, "has_long_upper_shadow": False}
+    if not kline_data or len(kline_data) < 50:
+        return result
+    closes = [k["close"] for k in kline_data]
+    volumes = [k["volume"] for k in kline_data]
+    highs = [k["high"] for k in kline_data]
+    if len(closes) >= 50:
+        ma50 = sum(closes[-50:]) / 50
+        result["ma50"] = round(ma50, 2)
+        result["above_ma50"] = current_price > ma50
+    if len(closes) >= 150:
+        ma150 = sum(closes[-150:]) / 150
+        result["ma150"] = round(ma150, 2)
+        result["above_ma150"] = current_price > ma150
+    recent = kline_data[-cfg.LIMIT_UP_DAYS:]
+    for i in range(1, len(recent)):
+        if recent[i-1]["close"] > 0:
+            chg = (recent[i]["close"] - recent[i-1]["close"]) / recent[i-1]["close"] * 100
+            if chg >= 9.5:
+                result["limit_up_count"] += 1
+    result["has_limit_up"] = result["limit_up_count"] > 0
+    if len(volumes) >= 50 and kline_data[-1]["volume"] > 0:
+        avg_vol = sum(volumes[-51:-1]) / 50
+        if avg_vol > 0:
+            result["vol_ratio_50d"] = round(kline_data[-1]["volume"] / avg_vol, 2)
+            result["volume_expanding"] = result["vol_ratio_50d"] >= cfg.VOLUME_EXPAND_RATIO
+    if len(highs) >= 20:
+        high_20d = max(highs[-21:-1])
+        result["near_20d_high"] = current_price >= high_20d * 0.97
+        last_k = kline_data[-1]
+        body = abs(last_k["close"] - last_k["open"])
+        upper_shadow = last_k["high"] - max(last_k["close"], last_k["open"])
+        if body > 0 and upper_shadow > body * 2:
+            result["has_long_upper_shadow"] = True
+    return result
+
 
 def enrich_stock_details(codes):
     """A-share comprehensive data enrichment via Eastmoney"""
@@ -183,7 +252,7 @@ def enrich_stock_details(codes):
             pass
     return results
 
-def deep_score(row, fund_flow, rank_idx):
+def deep_score(row, fund_flow, rank_idx, sepa=None):
     """Five-dimension scoring: Trend(25) + Capital(25) + Sentiment(15) + Technical(20) + Value(15) = 100"""
     code = row['code']
     f = fund_flow.get(code, {})
@@ -281,7 +350,49 @@ def deep_score(row, fund_flow, rank_idx):
         else: value += 1
     else: value += 1
     
-    total = trend + capital + sentiment + technical + value
+    # ---- SEPA SCORING (15 bonus points) ----
+    sepa_score = 0
+    sepa_signals = []
+    
+    if sepa:
+        # MA alignment (price above both MA50 and MA150)
+        if sepa.get("above_ma50") and sepa.get("above_ma150"):
+            sepa_score += 5
+            sepa_signals.append("股价站上MA50/MA150多头排列")
+        elif sepa.get("above_ma50"):
+            sepa_score += 3
+            sepa_signals.append("股价在MA50之上")
+        
+        # Limit-up history (涨停基因)
+        if sepa.get("has_limit_up"):
+            lu_count = sepa.get("limit_up_count", 0)
+            if lu_count >= 2:
+                sepa_score += 5
+                sepa_signals.append(f"近20日{lu_count}次涨停，主力高度活跃")
+            else:
+                sepa_score += 3
+                sepa_signals.append("近20日有涨停，主力活跃")
+        
+        # Volume expansion (量能放大)
+        if sepa.get("volume_expanding"):
+            sepa_score += 3
+            sepa_signals.append(f"量能放大{sepa.get('vol_ratio_50d',0):.1f}倍，资金加速流入")
+        
+        # Near 20-day high (突破形态)
+        if sepa.get("near_20d_high"):
+            sepa_score += 2
+            sepa_signals.append("接近20日新高，突破在即")
+        
+        # No long upper shadow (无长上影线)
+        if not sepa.get("has_long_upper_shadow"):
+            sepa_score += 1
+        else:
+            sepa_signals.append("长上影线，短期抛压存在")
+    
+    # Add SEPA to total
+    total = trend + capital + sentiment + technical + value + sepa_score
+    # Merge SEPA signals into prediction signals
+    predict_signals.extend(sepa_signals)
     
     # ---- 6. RECOMMENDATION based on comprehensive analysis ----
     recommendation = ""
@@ -470,6 +581,8 @@ def deep_score(row, fund_flow, rank_idx):
             'confidence': round(confidence, 1),
             'signals': predict_signals,
         },
+        'sepa_score': round(sepa_score, 1),
+        'max_score': 115,
         'sell_advice': sell_advice,
         'sell_detail': sell_detail,
         'target_high': target_high,
@@ -497,8 +610,9 @@ def run_screen():
     print(f"Pass 1: {len(passed)}/{total}, fetching fund flow for {len(top_codes)} stocks...")
     fund_flow = fetch_fund_flow_batch(top_codes)
     
-    # Enrich top stocks with Eastmoney details (turnover rate, volume ratio, market cap, PE)
-    top_codes_list = passed.head(ScreenerConfig.TOP_N)["code"].tolist()
+    # SEPA: fetch kline for MA + limit-up analysis
+    top_codes_list = passed.head(ScreenerConfig.TOP_N * 2)["code"].tolist()
+    kline_data = fetch_kline_batch(top_codes_list, days=160)
     enriched = enrich_stock_details(top_codes_list)
     
     stocks = []
@@ -526,8 +640,11 @@ def run_screen():
                 'sector': em.get('sector'),                      # 行业板块
             }
         }
-        scoring = deep_score(row, fund_flow, idx)
+        kd = kline_data.get(code, [])
+        sepa = calc_sepa_metrics(code, kd, float(row['price']))
+        scoring = deep_score(row, fund_flow, idx, sepa)
         s.update(scoring)
+        s['sepa'] = sepa
         stocks.append(s)
     
     stocks.sort(key=lambda x: x['total'], reverse=True)
