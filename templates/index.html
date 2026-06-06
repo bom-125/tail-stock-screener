@@ -273,6 +273,45 @@ function renderResult(data, isSse) {
         h += '</div>';
     }
     
+    // Prediction box (明日预判)
+    const pred = s.prediction;
+    if (pred) {
+        const dirCls = pred.direction.includes('涨') ? 'up' : (pred.direction.includes('跌') ? 'down' : 'neutral');
+        h += '<div class="predict-box">';
+        h += '<div class="predict-header">';
+        h += '<span style="font-size:14px;">🔮</span>';
+        h += '<span class="predict-direction '+dirCls+'">明日预判：'+pred.direction+'</span>';
+        h += '<span class="predict-confidence">置信度 '+fmtNum(pred.confidence,0)+'%</span>';
+        h += '</div>';
+        if (pred.signals && pred.signals.length > 0) {
+            h += '<div class="predict-signals">';
+            pred.signals.forEach(ps => { h += '<div>• '+ps+'</div>'; });
+            h += '</div>';
+        }
+        h += '</div>';
+    }
+    
+    // Sell advice box (卖出建议)
+    const sellAdvice = s.sell_advice;
+    if (sellAdvice) {
+        h += '<div class="sell-box">';
+        h += '<div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;">';
+        h += '<span style="font-size:14px;">💰</span>';
+        h += '<span class="sell-advice">'+sellAdvice+'</span>';
+        h += '</div>';
+        if (s.sell_detail && s.sell_detail.length > 0) {
+            h += '<div class="sell-detail">';
+            s.sell_detail.forEach(d => { h += '<div>• '+d+'</div>'; });
+            h += '</div>';
+        }
+        if (s.target_high || s.target_low) {
+            h += '<div class="target-price">';
+            if (s.target_high) h += '<span>目标区间 <span class="tp-low">'+fmtNum(s.target_low,2)+'</span> ~ <span class="tp-high">'+fmtNum(s.target_high,2)+'</span></span>';
+            h += '</div>';
+        }
+        h += '</div>';
+    }
+    
     // Footer
     h += '<div class="stock-footer"><span>振幅 '+fmtNum(s.amplitude,2)+'%</span><span>成交 '+fmtMoney(s.amount)+'</span>'+(sector?'<span>'+sector+'</span>':'')+'</div>';
     h += '</div>';

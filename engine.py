@@ -332,6 +332,125 @@ def deep_score(row, fund_flow, rank_idx):
     
     reco_map = {"strong_buy": "强力买入", "buy": "建议买入", "watch": "观望关注", "avoid": "谨慎回避"}
     
+    # ---- 7. NEXT-DAY PREDICTION (明日分时预判) ----
+    next_day_score = 0
+    predict_signals = []
+    
+    # A. Tail-market momentum analysis (尾盘动量分析)
+    if open_p > 0 and price > 0:
+        tail_pct = (price - open_p) / open_p * 100
+        if tail_pct > 2 and vol > 0:
+            next_day_score += 15
+            predict_signals.append("尾盘强势拉升，资金介入明显")
+        elif tail_pct > 1:
+            next_day_score += 8
+            predict_signals.append("尾盘小幅拉升")
+        elif tail_pct > 0:
+            next_day_score += 4
+        elif tail_pct < -1:
+            next_day_score -= 10
+            predict_signals.append("尾盘回落，次日承压")
+    
+    # B. Price position analysis (收盘位置分析)
+    if high > low > 0 and price > 0:
+        close_pos = (price - low) / (high - low)
+        if close_pos >= 0.9:
+            next_day_score += 10
+            predict_signals.append("收盘于全天高点附近，强势特征")
+        elif close_pos >= 0.7:
+            next_day_score += 4
+        elif close_pos <= 0.3:
+            next_day_score -= 8
+            predict_signals.append("收盘于全天低位，弱势特征")
+    
+    # C. Fund flow impact on next day (资金面预判)
+    if main_net >= 1e8:
+        next_day_score += 16
+        predict_signals.append(f"主力大幅净流入{main_net/1e4:.0f}万，次日大概率高开")
+    elif main_net >= 5e7:
+        next_day_score += 10
+        predict_signals.append(f"主力净流入{main_net/1e4:.0f}万，有资金支撑")
+    elif main_net >= 1e7:
+        next_day_score += 4
+    elif main_net < -5e7:
+        next_day_score -= 12
+        predict_signals.append("主力大幅流出，次日低开风险")
+    elif main_net < -1e7:
+        next_day_score -= 6
+    
+    # D. Volume-price relationship (量价关系)
+    if vol > 0:
+        pct = safe_float(str(row.get('pct_change', 0))) or 0
+        if pct > 5 and amp > 8:
+            next_day_score -= 5
+            predict_signals.append("放量冲高回落风险，谨慎追涨")
+        elif pct > 3 and amp < 6 and vol > 1e7:
+            next_day_score += 6
+            predict_signals.append("温和放量上涨，量价配合良好")
+    
+    # E. Amplitude risk (振幅风险)
+    if amp > 9:
+        next_day_score -= 6
+        predict_signals.append("振幅过大，次日震荡概率高")
+    elif amp < 2:
+        next_day_score -= 3
+        predict_signals.append("振幅过小，动能不足")
+    
+    # F. Price range and market cap proxy (市值活跃度)
+    if 8 <= price <= 50 and amount > 5e7:
+        next_day_score += 3
+        predict_signals.append("中小盘活跃标的，次日延续性较好")
+    
+    # ---- 8. PREDICTION OUTPUT ----
+    if next_day_score >= 25:
+        direction = "上涨"
+        confidence = min(90, 55 + next_day_score)
+    elif next_day_score >= 10:
+        direction = "偏多震荡"
+        confidence = min(80, 40 + next_day_score)
+    elif next_day_score >= -5:
+        direction = "横盘震荡"
+        confidence = 35 + next_day_score
+    elif next_day_score >= -15:
+        direction = "偏空震荡"
+        confidence = min(70, 50 - abs(next_day_score))
+    else:
+        direction = "下跌"
+        confidence = min(85, 55 + abs(next_day_score))
+    
+    # ---- 9. SELL ADVICE (卖出建议) ----
+    sell_advice = ""
+    sell_detail = []
+    
+    if recommendation in ("strong_buy", "buy") and next_day_score >= 20:
+        sell_advice = "次日尾盘或后天早盘择机卖出"
+        sell_detail.append("主力资金积极，预计次日延续强势")
+        sell_detail.append("建议14:30后观察分时是否放量滞涨再决定")
+    elif recommendation in ("strong_buy", "buy") and next_day_score >= 5:
+        sell_advice = "次日冲高时卖出"
+        sell_detail.append("次日开盘大概率冲高，建议09:45-10:15择机卖出")
+        sell_detail.append("若开盘后量能不济，应在10:00前卖出")
+    elif recommendation == "watch":
+        if next_day_score >= 0:
+            sell_advice = "次日开盘15分钟内卖出"
+            sell_detail.append("标的评分一般，不建议持仓过久")
+            sell_detail.append("利用开盘流动性较好时快速出清")
+        else:
+            sell_advice = "竞价阶段或开盘即卖出"
+            sell_detail.append("技术面偏弱，次日大概率低开")
+            sell_detail.append("建议09:25集合竞价时挂低价卖出")
+    else:
+        sell_advice = "竞价阶段立即卖出"
+        sell_detail.append("评分偏低，不宜持有")
+        sell_detail.append("建议09:20前挂跌停价参与竞价卖出")
+    
+    # If close near high with strong volume, add target price estimate
+    target_high = None
+    target_low = None
+    if price and pct:
+        target_high = round(price * (1 + max(0.01, pct/100 * 0.5)), 2)
+        target_low = round(price * (1 - min(0.03, abs(pct)/100 * 0.3)), 2)
+    
     return {
         'total': round(total, 1),
         'trend': round(trend, 1),
@@ -346,6 +465,15 @@ def deep_score(row, fund_flow, rank_idx):
         'recommendation': reco_map[recommendation],
         'reco_level': recommendation,
         'signals': signals,
+        'prediction': {
+            'direction': direction,
+            'confidence': round(confidence, 1),
+            'signals': predict_signals,
+        },
+        'sell_advice': sell_advice,
+        'sell_detail': sell_detail,
+        'target_high': target_high,
+        'target_low': target_low,
     }
 
 def is_market_open():
