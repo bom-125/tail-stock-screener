@@ -58,6 +58,17 @@ def broadcast_sse(data):
 def background_screen():
     """后台定时刷新选股结果"""
     global cached_result, last_update
+    # Run once immediately on startup
+    try:
+        print("[startup] Running initial screen...")
+        result = run_screen()
+        with cache_lock:
+            cached_result = result
+            last_update = datetime.now().strftime('%H:%M:%S')
+        print(f"[startup] Initial screen done: {result.get('matched',0)} stocks")
+    except Exception as e:
+        print(f"[startup] Initial screen failed: {e}")
+    
     while True:
         interval = get_refresh_interval()
         
