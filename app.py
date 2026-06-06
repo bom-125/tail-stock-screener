@@ -1,7 +1,8 @@
-﻿"""
-灏剧洏閫夎偂 Web 鏈嶅姟 - SSE瀹炴椂鎺ㄩ€佺増
-绉诲姩绔搷搴斿紡鐣岄潰 + 灏剧洏鏃舵楂橀鍒锋柊
 """
+尾盘选股 Web 服务 - SSE实时推送版
+移动端响应式界面 + 尾盘时段高频刷新
+"""
+import sys, os
 from flask import Flask, render_template, jsonify, request, Response, stream_with_context
 from engine import run_screen, is_market_open, ScreenerConfig
 from datetime import datetime
@@ -9,29 +10,32 @@ import threading
 import time
 import json
 import queue
-import os
+import sys, os
 
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
 
-# SSE 娑堟伅闃熷垪
+# SSE 消息队列
 sse_queues = []
 sse_lock = threading.Lock()
 
-# 缂撳瓨
+# 缓存
 cached_result = None
 cache_lock = threading.Lock()
 last_update = None
 
-# 鍒锋柊闂撮殧锛氬熬鐩樻椂娈?0绉掞紝鍏朵粬鏃舵2鍒嗛挓
+# 刷新间隔：尾盘时段30秒，其他时段2分钟
 def get_refresh_interval():
     now = datetime.now()
     if now.weekday() >= 5:
-        return 300  # 鍛ㄦ湯涓嶉绻佸埛鏂?    # 灏剧洏鏃舵 14:30-15:05 楂橀鍒锋柊
+        return 300  # 周末不频繁刷新
+    # 尾盘时段 14:30-15:05 高频刷新
     tail_start = now.replace(hour=14, minute=30, second=0)
     tail_end = now.replace(hour=15, minute=5, second=0)
     if tail_start <= now <= tail_end:
-        return 30  # 30绉?    # 鐩樹腑 60绉?    morning_start = now.replace(hour=9, minute=30, second=0)
+        return 30  # 30秒
+    # 盘中 60秒
+    morning_start = now.replace(hour=9, minute=30, second=0)
     afternoon_end = now.replace(hour=15, minute=5, second=0)
     if morning_start <= now <= afternoon_end:
         return 60
@@ -39,7 +43,7 @@ def get_refresh_interval():
 
 
 def broadcast_sse(data):
-    """鍚戞墍鏈塖SE瀹㈡埛绔帹閫佹暟鎹?""
+    """向所有SSE客户端推送数据"""
     with sse_lock:
         dead = []
         for q in sse_queues:
@@ -52,7 +56,7 @@ def broadcast_sse(data):
 
 
 def background_screen():
-    """鍚庡彴瀹氭椂鍒锋柊閫夎偂缁撴灉"""
+    """后台定时刷新选股结果"""
     global cached_result, last_update
     while True:
         interval = get_refresh_interval()
@@ -64,7 +68,8 @@ def background_screen():
                     cached_result = result
                     last_update = datetime.now().strftime('%H:%M:%S')
                 
-                # 鎺ㄩ€佺粰鎵€鏈塖SE瀹㈡埛绔?                push_data = {
+                # 推送给所有SSE客户端
+                push_data = {
                     "type": "update",
                     "data": result,
                     "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -72,12 +77,12 @@ def background_screen():
                 }
                 broadcast_sse(json.dumps(push_data, ensure_ascii=False))
             except Exception as e:
-                print(f"鍚庡彴鍒锋柊澶辫触: {e}")
+                print(f"后台刷新失败: {e}")
         
         time.sleep(interval)
 
 
-# ==================== 璺敱 ====================
+# ==================== 路由 ====================
 
 @app.route('/')
 def index():
@@ -89,7 +94,7 @@ def api_screen():
     with cache_lock:
         result = cached_result
     if result is None:
-        return jsonify({"success": False, "message": "鏆傛湭閫夎偂鏁版嵁", "stocks": []})
+        return jsonify({"success": False, "message": "暂未选股数据", "stocks": []})
     return jsonify(result)
 
 
@@ -101,7 +106,7 @@ def api_refresh():
         cached_result = result
         last_update = datetime.now().strftime('%H:%M:%S')
     
-    # 鎺ㄩ€佺粰SSE
+    # 推送给SSE
     push_data = {
         "type": "update",
         "data": result,
@@ -126,14 +131,15 @@ def api_status():
 
 @app.route('/api/stream')
 def api_stream():
-    """SSE瀹炴椂鏁版嵁娴?""
+    """SSE实时数据流"""
     q = queue.Queue(maxsize=5)
     with sse_lock:
         sse_queues.append(q)
     
     def generate():
         try:
-            # 鍏堝彂閫佸綋鍓嶇紦瀛樻暟鎹?            with cache_lock:
+            # 先发送当前缓存数据
+            with cache_lock:
                 if cached_result:
                     init_data = json.dumps({
                         "type": "update",
@@ -174,9 +180,16 @@ if __name__ == '__main__':
     local_ip = socket.gethostbyname(hostname)
     
     print(f"""
-鈺斺晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晽
-鈺?       馃敟 灏剧洏閫夎偂绯荤粺 v2.0              鈺?鈺?       SSE 瀹炴椂鎺ㄩ€?路 绉诲姩绔€傞厤         鈺?鈺犫晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨暎
-鈺? 鏈満璁块棶:  http://127.0.0.1:5000        鈺?鈺? 鎵嬫満璁块棶:  http://{local_ip}:5000   鈺?鈺? 瀹炴椂鎺ㄩ€?  /api/stream (SSE)            鈺?鈺? 灏剧洏鏃舵:  30绉掕嚜鍔ㄥ埛鏂?                鈺?鈺? 鐩樹腑鏃舵:  60绉掕嚜鍔ㄥ埛鏂?                鈺?鈺氣晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨暆
+╔══════════════════════════════════════════╗
+║        🔥 尾盘选股系统 v2.0              ║
+║        SSE 实时推送 · 移动端适配         ║
+╠══════════════════════════════════════════╣
+║  本机访问:  http://127.0.0.1:5000        ║
+║  手机访问:  http://{local_ip}:5000   ║
+║  实时推送:  /api/stream (SSE)            ║
+║  尾盘时段:  30秒自动刷新                 ║
+║  盘中时段:  60秒自动刷新                 ║
+╚══════════════════════════════════════════╝
     """)
     
     port = int(os.environ.get('PORT', 5000))

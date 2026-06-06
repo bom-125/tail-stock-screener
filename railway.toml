@@ -1,12 +1,14 @@
 ﻿[build]
   builder = "nixpacks"
+  buildCommand = "pip install -r requirements.txt"
   [build.config]
     pythonVersion = "3.12"
 
 [deploy]
   startCommand = "python app.py"
   healthcheckPath = "/api/status"
-  restartPolicyType = "always"
+  restartPolicyType = "ON_FAILURE"
+  maxRestarts = 3
 
 [service]
   name = "tail-stock-screener"

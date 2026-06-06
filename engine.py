@@ -10,33 +10,54 @@ _o = requests.Session.__init__
 def _ni(s): _o(s); s.trust_env = False
 requests.Session.__init__ = _ni
 
+import akshare as ak
 import pandas as pd
 import numpy as np
 from datetime import datetime
-import re, time, json, warnings, io, sys
+import re, time, warnings, io, sys
 warnings.filterwarnings('ignore')
 
-import akshare as ak
-import os as _os
+class ScreenerConfig:
+    PCT_CHANGE_MIN = 2.0
+    PCT_CHANGE_MAX = 6.5
+    VOLUME_RATIO_MIN = 1.2
+    TURNOVER_MIN = 3.0
+    TURNOVER_MAX = 15.0
+    MARKET_CAP_MIN = 30
+    MARKET_CAP_MAX = 500
+    PRICE_MIN = 5.0
+    PRICE_MAX = 80.0
+    EXCLUDE_ST = True
+    EXCLUDE_CHINEXT = True
+    EXCLUDE_STAR = True
+    TOP_N = 30
 
 _stock_cache = {'codes': None, 'time': 0}
 _fund_flow_cache = {}
 
-_STOCKS_JSON = _os.path.join = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "stocks.json")
+def safe_float(v):
+    try: return float(v) if v and str(v).strip() else None
+    except: return None
+
 def get_stock_codes():
+    """Get stock codes from local stocks.json (fast, Railway-safe) with akshare fallback"""
+    import json as _json
     now = time.time()
     if _stock_cache["codes"] is not None and now - _stock_cache["time"] < 3600:
         return _stock_cache["codes"]
-    if _os.path.exists(_STOCKS_JSON):
+    
+    stocks_json = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stocks.json")
+    if os.path.exists(stocks_json):
         try:
-            with open(_STOCKS_JSON, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            with open(stocks_json, "r", encoding="utf-8") as f:
+                data = _json.load(f)
             _stock_cache["codes"] = data["codes"]
             _stock_cache["time"] = now
             print(f"[engine] Loaded {len(data['codes'])} stocks from stocks.json")
             return data["codes"]
         except Exception as e:
             print(f"[engine] stocks.json error: {e}")
+    
     print("[engine] Falling back to akshare...")
     old_out = sys.stdout; sys.stdout = io.StringIO()
     try:
@@ -44,8 +65,10 @@ def get_stock_codes():
         df["code"] = df["code"].astype(str).str.zfill(6)
         df["sid"] = df["code"].apply(lambda x: "sh"+x if x.startswith(("6","9")) else "sz"+x)
         codes = [{"code": r["code"], "name": r["name"], "sid": r["sid"],
-                   "st": "ST" in str(r["name"]), "chinext": r["code"].startswith(("300","301")),
-                   "star": r["code"].startswith(("688","689"))} for _, r in df.iterrows()]
+                   "st": "ST" in str(r["name"]),
+                   "chinext": r["code"].startswith(("300","301")),
+                   "star": r["code"].startswith(("688","689"))}
+                 for _, r in df.iterrows()]
         _stock_cache["codes"] = codes; _stock_cache["time"] = now
         return codes
     finally: sys.stdout = old_out
