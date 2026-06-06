@@ -10,7 +10,6 @@ _o = requests.Session.__init__
 def _ni(s): _o(s); s.trust_env = False
 requests.Session.__init__ = _ni
 
-import akshare as ak
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -61,6 +60,7 @@ def get_stock_codes():
     print("[engine] Falling back to akshare...")
     old_out = sys.stdout; sys.stdout = io.StringIO()
     try:
+        import akshare as ak
         df = ak.stock_info_a_code_name()
         df["code"] = df["code"].astype(str).str.zfill(6)
         df["sid"] = df["code"].apply(lambda x: "sh"+x if x.startswith(("6","9")) else "sz"+x)
@@ -111,6 +111,10 @@ def screen_stocks(df):
     r = df.copy()
     if cfg.EXCLUDE_ST:
         r = r[~r['name'].str.contains(r'ST|閫€|\*ST', na=False, regex=True)].copy()
+    if cfg.EXCLUDE_CHINEXT:
+        r = r[~r['code'].str.startswith(('300','301'))].copy()
+    if cfg.EXCLUDE_STAR:
+        r = r[~r['code'].str.startswith(('688','689'))].copy()
     r = r[(r['pct_change']>=cfg.PCT_CHANGE_MIN)&(r['pct_change']<=cfg.PCT_CHANGE_MAX)].copy()
     r = r[(r['price']>=cfg.PRICE_MIN)&(r['price']<=cfg.PRICE_MAX)].copy()
     if 'high' in r.columns and 'low' in r.columns:
