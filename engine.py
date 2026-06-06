@@ -150,6 +150,39 @@ def fetch_fund_flow_batch(codes):
         time.sleep(0.08)
     return results
 
+def enrich_stock_details(codes):
+    """A-share comprehensive data enrichment via Eastmoney"""
+    s = requests.Session(); s.trust_env = False
+    s.headers.update({"User-Agent":"Mozilla/5.0","Referer":"https://data.eastmoney.com/"})
+    results = {}
+    for code in codes:
+        try:
+            market = 0 if code.startswith(("0","3","2")) else 1
+            fields = "f43,f50,f100,f115,f116,f117,f152,f162,f167,f168,f169,f173,f174,f184"
+            url = f"https://push2.eastmoney.com/api/qt/stock/get?secid={market}.{code}&fields={fields}"
+            r = s.get(url, timeout=8)
+            if r.status_code == 200:
+                d = r.json().get("data", {})
+                if d:
+                    pe_ttm = d.get("f115")  # PE(TTM) in raw format
+                    pe_dyn = d.get("f162")  # PE(动态)
+                    results[code] = {
+                        "turnover_rate": round(d.get("f167", 0) / 100, 2) if d.get("f167") != "-" else None,
+                        "volume_ratio": round(d.get("f50", 0) / 100, 2),
+                        "total_mcap": round(d.get("f116", 0) / 1e8, 2) if d.get("f116") else None,
+                        "float_mcap": round(d.get("f117", 0) / 1e8, 2) if d.get("f117") else None,
+                        "pe_ttm": round(pe_ttm / 100, 2) if isinstance(pe_ttm, (int,float)) and pe_ttm > 0 else (round(pe_dyn / 100, 2) if isinstance(pe_dyn, (int,float)) and pe_dyn > 0 else None),
+                        "pe_dyn": round(pe_dyn / 100, 2) if isinstance(pe_dyn, (int,float)) and pe_dyn > 0 else None,
+                        "momentum": round(d.get("f152", 0) / 100, 2),          # 涨速(%)
+                        "bid_ask_ratio": round(d.get("f184", 0) / 100, 2),     # 委比(%)
+                        "chg_5d": round(d.get("f173", 0) / 100, 2),            # 5日涨跌幅
+                        "chg_ytd": round(d.get("f174", 0) / 100, 2),           # 今年涨跌幅
+                        "sector": d.get("f100", ""),                           # 行业
+                    }
+        except:
+            pass
+    return results
+
 def deep_score(row, fund_flow, rank_idx):
     """Five-dimension scoring: Trend(25) + Capital(25) + Sentiment(15) + Technical(20) + Value(15) = 100"""
     code = row['code']
@@ -250,6 +283,55 @@ def deep_score(row, fund_flow, rank_idx):
     
     total = trend + capital + sentiment + technical + value
     
+    # ---- 6. RECOMMENDATION based on comprehensive analysis ----
+    recommendation = ""
+    signals = []
+    
+    if total >= 85:
+        recommendation = "strong_buy"
+        signals.append("综合评分优秀")
+    elif total >= 70:
+        recommendation = "buy"
+        signals.append("综合评分良好")
+    elif total >= 55:
+        recommendation = "watch"
+        signals.append("综合评分一般")
+    else:
+        recommendation = "avoid"
+        signals.append("综合评分偏低")
+    
+    # Fund flow adjustment (upgrade by 1 level for strong inflow)
+    if main_net >= 5e7:
+        signals.append(f"主力净流入{main_net/1e4:.0f}万")
+        if recommendation == "buy": recommendation = "strong_buy"
+        elif recommendation == "watch": recommendation = "buy"
+        elif recommendation == "avoid": recommendation = "watch"
+    elif main_net >= 1e7:
+        signals.append(f"主力小幅流入{main_net/1e4:.0f}万")
+    elif main_net < -5e7:
+        signals.append("主力大幅流出，注意风险")
+        if recommendation == "strong_buy": recommendation = "buy"
+        elif recommendation == "buy": recommendation = "watch"
+    
+    # Amplitude risk warning
+    if amp > 10:
+        signals.append("振幅过大，波动风险高")
+        if recommendation in ("strong_buy", "buy"): recommendation = "watch"
+    elif 4 <= amp <= 7:
+        signals.append("振幅适中")
+    
+    # Tail-market price position signal
+    if high > low > 0 and price > 0:
+        pos = (price - low) / (high - low)
+        if pos >= 0.85:
+            signals.append("尾盘强势(高位收盘)")
+        elif pos <= 0.3:
+            signals.append("尾盘走弱(低位收盘)")
+            if recommendation == "strong_buy": recommendation = "buy"
+            elif recommendation == "buy": recommendation = "watch" 
+    
+    reco_map = {"strong_buy": "强力买入", "buy": "建议买入", "watch": "观望关注", "avoid": "谨慎回避"}
+    
     return {
         'total': round(total, 1),
         'trend': round(trend, 1),
@@ -260,7 +342,10 @@ def deep_score(row, fund_flow, rank_idx):
         'fund_flow': {
             'main_net_inflow': main_net,
             'main_net_ratio': main_ratio,
-        }
+        },
+        'recommendation': reco_map[recommendation],
+        'reco_level': recommendation,
+        'signals': signals,
     }
 
 def is_market_open():
@@ -284,15 +369,34 @@ def run_screen():
     print(f"Pass 1: {len(passed)}/{total}, fetching fund flow for {len(top_codes)} stocks...")
     fund_flow = fetch_fund_flow_batch(top_codes)
     
+    # Enrich top stocks with Eastmoney details (turnover rate, volume ratio, market cap, PE)
+    top_codes_list = passed.head(ScreenerConfig.TOP_N)["code"].tolist()
+    enriched = enrich_stock_details(top_codes_list)
+    
     stocks = []
     for idx, (_, row) in enumerate(passed.head(ScreenerConfig.TOP_N).iterrows()):
+        code = row["code"]
+        em = enriched.get(code, {})
         s = {
-            'code': row['code'], 'name': row['name'],
+            'code': code, 'name': row['name'],
             'price': round(float(row['price']),2) if pd.notna(row['price']) else None,
             'pct_change': round(float(row['pct_change']),2) if pd.notna(row['pct_change']) else None,
             'amplitude': round(float(row['amplitude']),2) if pd.notna(row.get('amplitude',0)) else None,
             'volume': safe_float(str(row.get('volume',''))),
             'amount': safe_float(str(row.get('amount',''))),
+            'enhanced': {
+                'turnover': em.get('turnover_rate'),             # 换手率(%)
+                'volume_ratio': em.get('volume_ratio'),          # 量比
+                'mktcap_yi': em.get('float_mcap'),               # 流通市值(亿)
+                'total_mcap_yi': em.get('total_mcap'),           # 总市值(亿)
+                'pe': em.get('pe_ttm') or em.get('pe_dyn'),      # 市盈率
+                'pb': None,                                      # 市净率(暂缺)
+                'momentum': em.get('momentum'),                  # 涨速
+                'bid_ask': em.get('bid_ask_ratio'),              # 委比
+                'chg_5d': em.get('chg_5d'),                      # 5日涨跌
+                'chg_ytd': em.get('chg_ytd'),                    # 今年涨跌
+                'sector': em.get('sector'),                      # 行业板块
+            }
         }
         scoring = deep_score(row, fund_flow, idx)
         s.update(scoring)

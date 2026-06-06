@@ -211,11 +211,15 @@ function renderResult(data, isSse) {
     h += '<div class="stock-top">';
     h += '<div style="display:flex;align-items:flex-start;gap:8px;">';
     h += '<div class="rank-badge '+rankClass(i)+'">'+(i<3?i+1:i+1)+'</div>';
-    h += '<div class="stock-name-code"><div class="name">'+s.name+'</div><div class="code">'+s.code+'</div></div>';
+    h += '<div class="stock-name-code"><div class="name">'+s.name+'<span class="reco-badge reco-'+recoLevel+'">'+reco+'</span></div><div class="code">'+s.code+'</div></div>';
     h += '</div>';
     h += '<div class="stock-price"><div class="price">'+fmtNum(s.price,2)+'</div>';
     h += '<div class="change '+pctCls+'">'+(s.pct_change>=0?'+':'')+fmtNum(s.pct_change,2)+'%</div></div>';
     h += '</div>';
+    
+    // Recommendation badge
+    const reco = s.recommendation || '';
+    const recoLevel = s.reco_level || '';
     
     // Score bar
     h += '<div class="score-bar-wrap">';
@@ -232,18 +236,45 @@ function renderResult(data, isSse) {
     });
     h += '</div></div>';
     
-    // Detail grid
+    // Detail grid (6 items: turnover, main inflow, main ratio, PE, volume ratio, market cap)
+    const volRatio = en.volume_ratio;
+    const momentum = en.momentum;
+    const bidAsk = en.bid_ask;
+    const chg5d = en.chg_5d;
+    const chgYtd = en.chg_ytd;
+    const sector = en.sector || '';
+    
     h += '<div class="stock-details">';
     h += '<div class="detail-item"><div class="val '+valClass(turnover||0,[8,4])+'">'+fmtNum(turnover,1)+'%</div><div class="lbl">换手率</div></div>';
     h += '<div class="detail-item"><div class="val">'+fmtMoney(mainNet)+'</div><div class="lbl">主力净流入</div></div>';
     h += '<div class="detail-item"><div class="val '+valClass(mainRatio||0,[3,0])+'">'+fmtNum(mainRatio,2)+'%</div><div class="lbl">主力净占比</div></div>';
     h += '<div class="detail-item"><div class="val">'+fmtNum(pe,1)+'</div><div class="lbl">市盈率PE</div></div>';
-    h += '<div class="detail-item"><div class="val">'+fmtNum(pb,1)+'</div><div class="lbl">市净率PB</div></div>';
+    h += '<div class="detail-item"><div class="val '+valClass(volRatio||0,[2,0.8])+'">'+fmtNum(volRatio,2)+'</div><div class="lbl">量比</div></div>';
     h += '<div class="detail-item"><div class="val">'+fmtNum(mktcap,0)+'亿</div><div class="lbl">流通市值</div></div>';
     h += '</div>';
     
+    // Extra data row (momentum, bid/ask, 5d change)
+    h += '<div class="extra-grid">';
+    h += '<div class="extra-item"><span class="val '+((momentum||0)>=0?'green':'red')+'">'+(momentum>=0?'+':'')+fmtNum(momentum,2)+'%</span><span class="lbl">涨速</span></div>';
+    h += '<div class="extra-item"><span class="val '+((bidAsk||0)>=0?'green':'red')+'">'+(bidAsk>=0?'+':'')+fmtNum(bidAsk,2)+'%</span><span class="lbl">委比</span></div>';
+    h += '<div class="extra-item"><span class="val '+((chg5d||0)>=0?'green':'red')+'">'+(chg5d>=0?'+':'')+fmtNum(chg5d,2)+'%</span><span class="lbl">5日涨跌</span></div>';
+    h += '</div>';
+    
+    // Signals from recommendation
+    const signals = s.signals || [];
+    if (signals.length > 0) {
+        h += '<div class="signals-list">';
+        signals.forEach(sig => {
+            let cls = 'sig-info';
+            if (sig.includes('风险')||sig.includes('走弱')||sig.includes('偏低')||sig.includes('流出')) cls = 'sig-warn';
+            else if (sig.includes('优秀')||sig.includes('流入')||sig.includes('强势')) cls = 'sig-good';
+            h += '<span class="signal-tag '+cls+'">'+sig+'</span>';
+        });
+        h += '</div>';
+    }
+    
     // Footer
-    h += '<div class="stock-footer"><span>振幅 '+fmtNum(s.amplitude,2)+'%</span><span>成交 '+fmtMoney(s.amount)+'</span></div>';
+    h += '<div class="stock-footer"><span>振幅 '+fmtNum(s.amplitude,2)+'%</span><span>成交 '+fmtMoney(s.amount)+'</span>'+(sector?'<span>'+sector+'</span>':'')+'</div>';
     h += '</div>';
   });
   h += '</div>';
