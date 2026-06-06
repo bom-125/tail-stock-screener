@@ -1,0 +1,12 @@
+﻿[build]
+  builder = "nixpacks"
+  [build.config]
+    pythonVersion = "3.12"
+
+[deploy]
+  startCommand = "python app.py"
+  healthcheckPath = "/api/status"
+  restartPolicyType = "always"
+
+[service]
+  name = "tail-stock-screener"
