@@ -8,249 +8,138 @@
 <title>尾盘选股</title>
 <style>
   :root {
-    --bg: #0f172a;
-    --card: #1e293b;
-    --border: #334155;
-    --text: #e2e8f0;
-    --text2: #94a3b8;
-    --red: #ef4444;
-    --green: #22c55e;
-    --amber: #f59e0b;
-    --blue: #3b82f6;
-    --purple: #8b5cf6;
-    --gold: #fbbf24;
-    --live: #10b981;
+    --bg: #0f172a; --card: #1e293b; --border: #334155;
+    --text: #e2e8f0; --text2: #94a3b8;
+    --red: #ef4444; --green: #22c55e; --amber: #f59e0b;
+    --blue: #3b82f6; --purple: #8b5cf6; --gold: #fbbf24;
+    --cyan: #06b6d4; --pink: #ec4899; --lime: #84cc16; --live: #10b981;
   }
   * { margin:0; padding:0; box-sizing:border-box; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    min-height: 100vh;
+    background: var(--bg); color: var(--text); min-height: 100vh;
     padding-bottom: env(safe-area-inset-bottom);
   }
   
   .header {
     position: sticky; top:0; z-index:100;
     background: linear-gradient(135deg, #1a1a2e, #16213e);
-    padding: 12px 16px;
-    display: flex; align-items: center; justify-content: space-between;
-    border-bottom: 1px solid var(--border);
-    backdrop-filter: blur(10px);
+    padding: 12px 16px; display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid var(--border); backdrop-filter: blur(10px);
   }
-  .header h1 {
-    font-size: 18px; font-weight:700;
-    background: linear-gradient(135deg, var(--amber), #f97316);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  }
-  .header-right { display:flex; align-items:center; gap:10px; }
-  .live-badge {
-    display:flex; align-items:center; gap:4px;
-    font-size: 10px; color: var(--live); font-weight:600;
-    padding: 3px 8px; border-radius: 10px;
-    background: rgba(16,185,129,0.12); border: 1px solid rgba(16,185,129,0.3);
-  }
-  .live-dot {
-    width: 6px; height: 6px; border-radius: 50%; background: var(--live);
-    animation: pulse 1.5s ease-in-out infinite;
-  }
-  @keyframes pulse {
-    0%,100% { opacity:1; transform:scale(1); }
-    50% { opacity:0.3; transform:scale(0.7); }
-  }
+  .header h1 { font-size:18px; font-weight:700; background: linear-gradient(135deg,var(--amber),#f97316); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+  .live-badge { display:flex; align-items:center; gap:4px; font-size:10px; color:var(--live); font-weight:600; padding:3px 8px; border-radius:10px; background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.3); }
+  .live-dot { width:6px; height:6px; border-radius:50%; background:var(--live); animation:pulse 1.5s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.3;transform:scale(0.7)} }
+  .status-dot { width:8px; height:8px; border-radius:50%; }
+  .status-dot.open { background:var(--green); box-shadow:0 0 6px var(--green); }
+  .status-dot.closed { background:var(--text2); }
   
-  .status-dot {
-    width: 8px; height: 8px; border-radius: 50%;
-  }
-  .status-dot.open { background: var(--green); box-shadow: 0 0 6px var(--green); }
-  .status-dot.closed { background: var(--text2); }
+  .stats-bar { display:flex; gap:6px; padding:10px 14px; overflow-x:auto; }
+  .stat-card { flex:0 0 auto; min-width:75px; background:var(--card); border-radius:10px; padding:8px 12px; text-align:center; border:1px solid var(--border); }
+  .stat-card .num { font-size:20px; font-weight:800; line-height:1.2; }
+  .stat-card .label { font-size:10px; color:var(--text2); margin-top:1px; }
+  .stat-card.total .num { color:var(--blue); }
+  .stat-card.match .num { color:var(--green); }
+  .stat-card.rate .num { color:var(--amber); }
   
-  .stats-bar {
-    display: flex; gap: 6px; padding: 10px 14px; overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-  .stat-card {
-    flex: 0 0 auto; min-width: 75px;
-    background: var(--card); border-radius: 10px;
-    padding: 8px 12px; text-align: center;
-    border: 1px solid var(--border);
-  }
-  .stat-card .num { font-size: 20px; font-weight: 800; line-height:1.2; }
-  .stat-card .label { font-size: 10px; color: var(--text2); margin-top:1px; }
-  .stat-card.total .num { color: var(--blue); }
-  .stat-card.match .num { color: var(--green); }
-  .stat-card.rate .num { color: var(--amber); }
-  
-  .toolbar {
-    display: flex; gap: 8px; padding: 0 14px 6px; align-items: center;
-  }
-  .btn {
-    border: none; border-radius: 8px; padding: 8px 16px;
-    font-size: 13px; font-weight: 600; cursor: pointer;
-    display: flex; align-items: center; gap: 4px;
-    transition: all 0.15s;
-  }
-  .btn-refresh { background: var(--blue); color: #fff; flex:1; justify-content:center; }
+  .toolbar { display:flex; gap:8px; padding:0 14px 6px; align-items:center; }
+  .btn { border:none; border-radius:8px; padding:8px 16px; font-size:13px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:4px; transition:all 0.15s; }
+  .btn-refresh { background:var(--blue); color:#fff; flex:1; justify-content:center; }
   .btn-refresh:active { opacity:0.8; transform:scale(0.97); }
-  .update-time { font-size: 10px; color: var(--text2); white-space:nowrap; }
+  .update-time { font-size:10px; color:var(--text2); white-space:nowrap; }
   
-  .filter-tags {
-    display: flex; gap: 5px; padding: 0 14px 8px; flex-wrap: wrap;
-  }
-  .filter-tag {
-    font-size: 10px; padding: 2px 7px; border-radius: 8px;
-    background: rgba(139,92,246,0.12); color: var(--purple);
-    border: 1px solid rgba(139,92,246,0.25);
-  }
+  .countdown-bar { height:3px; background:var(--border); border-radius:2px; margin:0 14px 8px; overflow:hidden; }
+  .countdown-fill { height:100%; background:linear-gradient(90deg,var(--blue),var(--purple)); border-radius:2px; transition:width 1s linear; }
   
-  .stock-list { padding: 0 14px 16px; }
+  .filter-tags { display:flex; gap:5px; padding:0 14px 8px; flex-wrap:wrap; }
+  .filter-tag { font-size:9px; padding:2px 7px; border-radius:8px; background:rgba(139,92,246,0.12); color:var(--purple); border:1px solid rgba(139,92,246,0.25); }
+  
+  .stock-list { padding:0 14px 16px; }
   .stock-item {
-    background: var(--card); border-radius: 14px; padding: 14px;
-    margin-bottom: 10px; border: 1px solid var(--border);
-    transition: all 0.2s;
-    animation: fadeSlideIn 0.3s ease;
+    background:var(--card); border-radius:14px; padding:14px; margin-bottom:10px;
+    border:1px solid var(--border); animation:fadeSlideIn 0.3s ease;
   }
-  @keyframes fadeSlideIn {
-    from { opacity:0; transform:translateY(8px); }
-    to { opacity:1; transform:translateY(0); }
-  }
-  .stock-item:active { transform: scale(0.98); background: #1e3050; }
+  @keyframes fadeSlideIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+  .stock-item:active { transform:scale(0.98); background:#1e3050; }
   
-  .stock-top {
-    display: flex; justify-content: space-between; align-items: flex-start;
-    margin-bottom: 10px;
-  }
-  .stock-name-code .name { font-size: 15px; font-weight: 700; }
-  .stock-name-code .code { font-size: 11px; color: var(--text2); margin-top: 2px; }
-  .stock-price { text-align: right; }
-  .stock-price .price { font-size: 18px; font-weight: 800; }
-  .stock-price .change {
-    font-size: 12px; font-weight: 600; padding: 2px 8px;
-    border-radius: 6px; margin-top: 2px;
-  }
-  .change.up { background: rgba(34,197,94,0.15); color: var(--green); }
-  .change.down { background: rgba(239,68,68,0.15); color: var(--red); }
-  .stock-price .flash {
-    animation: flashGreen 0.6s ease;
-  }
-  @keyframes flashGreen {
-    0% { background: rgba(34,197,94,0.4); }
-    100% { background: transparent; }
-  }
+  .stock-top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; }
+  .rank-badge { width:24px; height:24px; border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800; color:#fff; flex-shrink:0; }
+  .rank-1 { background:linear-gradient(135deg,#fbbf24,#f59e0b); font-size:14px; }
+  .rank-2 { background:linear-gradient(135deg,#94a3b8,#64748b); }
+  .rank-3 { background:linear-gradient(135deg,#d97706,#b45309); }
+  .rank-other { background:var(--border); }
+  .stock-name-code .name { font-size:15px; font-weight:700; }
+  .stock-name-code .code { font-size:11px; color:var(--text2); margin-top:1px; }
+  .stock-price { text-align:right; }
+  .stock-price .price { font-size:18px; font-weight:800; }
+  .stock-price .change { font-size:12px; font-weight:600; padding:2px 8px; border-radius:6px; margin-top:2px; display:inline-block; }
+  .change.up { background:rgba(34,197,94,0.15); color:var(--green); }
+  .change.down { background:rgba(239,68,68,0.15); color:var(--red); }
   
-  .stock-indicators {
-    display: grid; grid-template-columns: 1fr 1fr 1fr;
-    gap: 8px; margin-bottom: 10px;
-  }
-  .indicator {
-    text-align: center; padding: 8px 4px;
-    background: rgba(15,23,42,0.5); border-radius: 8px;
-  }
-  .indicator .val { font-size: 14px; font-weight: 700; }
-  .indicator .lbl { font-size: 10px; color: var(--text2); margin-top: 2px; }
-  .indicator .val.high { color: var(--green); }
-  .indicator .val.mid { color: var(--amber); }
-  .indicator .val.low { color: var(--text2); }
+  /* Score bar */
+  .score-bar-wrap { margin:8px 0; }
+  .score-bar-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
+  .score-total { font-size:20px; font-weight:800; color:var(--gold); }
+  .score-total .unit { font-size:11px; color:var(--text2); font-weight:400; }
+  .score-dimensions { display:flex; gap:4px; height:6px; border-radius:3px; overflow:hidden; }
+  .score-dim { height:100%; border-radius:1px; }
+  .dim-trend { background:var(--blue); }
+  .dim-capital { background:var(--green); }
+  .dim-sentiment { background:var(--amber); }
+  .dim-technical { background:var(--purple); }
+  .dim-valuation { background:var(--cyan); }
   
-  .stock-footer {
-    display: flex; justify-content: space-between; align-items: center;
-    padding-top: 8px; border-top: 1px solid var(--border);
-  }
-  .score-badge {
-    background: linear-gradient(135deg, var(--amber), #f97316);
-    color: #000; font-size: 12px; font-weight: 800;
-    padding: 3px 10px; border-radius: 20px;
-  }
+  /* Dimension labels */
+  .dim-labels { display:flex; justify-content:space-between; margin-top:4px; flex-wrap:wrap; }
+  .dim-label { font-size:9px; display:flex; align-items:center; gap:3px; }
+  .dim-dot { width:5px; height:5px; border-radius:50%; }
   
-  .empty {
-    text-align: center; padding: 60px 20px;
-  }
-  .empty .icon { font-size: 48px; margin-bottom: 12px; }
-  .empty .title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
-  .empty .desc { font-size: 13px; color: var(--text2); }
+  /* Stock details grid */
+  .stock-details { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin:10px 0; }
+  .detail-item { text-align:center; padding:8px 4px; background:rgba(15,23,42,0.5); border-radius:8px; }
+  .detail-item .val { font-size:12px; font-weight:700; }
+  .detail-item .lbl { font-size:9px; color:var(--text2); margin-top:1px; }
+  .val-green { color:var(--green); }
+  .val-red { color:var(--red); }
+  .val-amber { color:var(--amber); }
+  .val-blue { color:var(--blue); }
   
-  .loading {
-    text-align: center; padding: 40px;
-  }
-  .spinner {
-    width: 28px; height: 28px; border: 3px solid var(--border);
-    border-top-color: var(--blue); border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    margin: 0 auto 10px;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  .stock-footer { display:flex; justify-content:space-between; align-items:center; padding-top:6px; border-top:1px solid var(--border); font-size:10px; color:var(--text2); }
   
-  .countdown-bar {
-    height: 3px; background: var(--border); border-radius: 2px;
-    margin: 0 14px 8px; overflow: hidden;
-  }
-  .countdown-fill {
-    height: 100%; background: linear-gradient(90deg, var(--blue), var(--purple));
-    border-radius: 2px; transition: width 1s linear;
-  }
-  
-  .rank-badge {
-    width: 22px; height: 22px; border-radius: 6px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 11px; font-weight: 800; color: #fff;
-    flex-shrink: 0;
-  }
-  .rank-1 { background: linear-gradient(135deg,#fbbf24,#f59e0b); }
-  .rank-2 { background: linear-gradient(135deg,#94a3b8,#64748b); }
-  .rank-3 { background: linear-gradient(135deg,#d97706,#b45309); }
-  .rank-other { background: var(--border); }
-  
-  .toast {
-    position: fixed; top: 80px; left: 50%; transform: translateX(-50%);
-    background: var(--card); border: 1px solid var(--blue);
-    color: var(--text); padding: 8px 18px; border-radius: 20px;
-    font-size: 12px; font-weight: 600; z-index: 200;
-    animation: toastIn 0.3s ease, toastOut 0.3s ease 1.5s forwards;
-    pointer-events: none;
-  }
-  @keyframes toastIn { from { opacity:0; transform:translateX(-50%) translateY(-10px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
-  @keyframes toastOut { from { opacity:1; } to { opacity:0; } }
+  .empty { text-align:center; padding:60px 20px; }
+  .empty .icon { font-size:48px; margin-bottom:12px; }
+  .empty .title { font-size:16px; font-weight:600; margin-bottom:4px; }
+  .empty .desc { font-size:13px; color:var(--text2); }
+  .loading { text-align:center; padding:40px; }
+  .spinner { width:28px; height:28px; border:3px solid var(--border); border-top-color:var(--blue); border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 10px; }
+  @keyframes spin { to{transform:rotate(360deg)} }
+  .toast { position:fixed; top:80px; left:50%; transform:translateX(-50%); background:var(--card); border:1px solid var(--blue); color:var(--text); padding:8px 18px; border-radius:20px; font-size:12px; font-weight:600; z-index:200; animation:toastIn 0.3s ease,toastOut 0.3s ease 1.5s forwards; pointer-events:none; }
+  @keyframes toastIn { from{opacity:0;transform:translateX(-50%) translateY(-10px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
+  @keyframes toastOut { from{opacity:1} to{opacity:0} }
 </style>
 </head>
 <body>
 
 <div class="header">
   <h1>🔥 尾盘选股</h1>
-  <div class="header-right">
-    <div class="live-badge" id="liveBadge">
-      <span class="live-dot"></span> LIVE
-    </div>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <div class="live-badge" id="liveBadge"><span class="live-dot"></span> LIVE</div>
     <span class="status-dot" id="statusDot"></span>
   </div>
 </div>
 
-<div class="countdown-bar">
-  <div class="countdown-fill" id="countdownFill"></div>
-</div>
+<div class="countdown-bar"><div class="countdown-fill" id="countdownFill"></div></div>
 
-<div class="stats-bar" id="statsBar">
-  <div class="stat-card total">
-    <div class="num" id="statTotal">--</div>
-    <div class="label">全市场</div>
-  </div>
-  <div class="stat-card match">
-    <div class="num" id="statMatch">--</div>
-    <div class="label">符合条件</div>
-  </div>
-  <div class="stat-card rate">
-    <div class="num" id="statRate">--</div>
-    <div class="label">命中率</div>
-  </div>
-  <div class="stat-card" style="flex:1;min-width:90px;">
-    <div class="num" style="font-size:13px;color:var(--text);" id="statTime">--</div>
-    <div class="label">更新时间</div>
-  </div>
+<div class="stats-bar">
+  <div class="stat-card total"><div class="num" id="statTotal">--</div><div class="label">全市场</div></div>
+  <div class="stat-card match"><div class="num" id="statMatch">--</div><div class="label">符合条件</div></div>
+  <div class="stat-card rate"><div class="num" id="statRate">--</div><div class="label">命中率</div></div>
+  <div class="stat-card" style="flex:1;min-width:90px;"><div class="num" style="font-size:13px;color:var(--text);" id="statTime">--</div><div class="label">更新时间</div></div>
 </div>
 
 <div class="toolbar">
-  <button class="btn btn-refresh" onclick="doRefresh()">
-    <span>🔄</span> 手动刷新
-  </button>
+  <button class="btn btn-refresh" onclick="doRefresh()"><span>🔄</span> 手动刷新</button>
   <span class="update-time" id="updateLabel">等待数据...</span>
 </div>
 
@@ -258,236 +147,152 @@
   <span class="filter-tag">涨幅 2%~6.5%</span>
   <span class="filter-tag">量比 ≥1.2</span>
   <span class="filter-tag">换手 3%~15%</span>
-  <span class="filter-tag">市值 30~500亿</span>
-  <span class="filter-tag">排除ST</span>
-  <span class="filter-tag">综合评分</span>
+  <span class="filter-tag">五维评分</span>
+  <span class="filter-tag">资金流向</span>
+  <span class="filter-tag">PE/PB估值</span>
 </div>
 
-<div id="content">
-  <div class="loading">
-    <div class="spinner"></div>
-    <div style="color:var(--text2);font-size:13px;">连接实时数据中...</div>
-    <div style="color:var(--text2);font-size:11px;margin-top:4px;" id="connStatus">正在建立 SSE 连接</div>
-  </div>
-</div>
+<div id="content"><div class="loading"><div class="spinner"></div><div style="color:var(--text2);font-size:13px;">实时分析中...</div></div></div>
 
 <script>
-// ==================== SSE 实时推送核心 ====================
-let eventSource = null;
-let refreshCountdown = 60;
-let countdownTimer = null;
-let currentInterval = 60;
+let eventSource = null, refreshCountdown = 60, countdownTimer = null, currentInterval = 60;
 
-function getRankClass(idx) {
-  if (idx === 0) return 'rank-1';
-  if (idx === 1) return 'rank-2';
-  if (idx === 2) return 'rank-3';
-  return 'rank-other';
-}
-
-function formatMoney(val) {
-  if (val === null || val === undefined) return '--';
-  if (val >= 1e8) return (val/1e8).toFixed(2)+'亿';
-  if (val >= 1e4) return (val/1e4).toFixed(1)+'万';
-  return val.toFixed(0);
-}
-
-function valColor(val, thresh) {
-  if (val === null || val === undefined) return '';
-  if (val >= thresh[0]) return 'high';
-  if (val >= thresh[1]) return 'mid';
-  return 'low';
-}
+function rankClass(i) { return i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'rank-other'; }
+function fmtMoney(v) { if(!v) return '--'; if(v>=1e8) return (v/1e8).toFixed(2)+'亿'; if(v>=1e4) return (v/1e4).toFixed(1)+'万'; return Number(v).toFixed(0); }
+function fmtNum(v,d) { return v!=null?v.toFixed(d||2):'--'; }
+function valClass(v,t) { return v>=t[0]?'val-green':v>=t[1]?'val-amber':'val-red'; }
 
 function showToast(msg) {
-  const t = document.createElement('div');
-  t.className = 'toast';
-  t.textContent = msg;
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 2000);
+  const t = document.createElement('div'); t.className='toast'; t.textContent=msg;
+  document.body.appendChild(t); setTimeout(()=>t.remove(),2000);
 }
 
-function renderResult(data, isSseUpdate) {
-  const container = document.getElementById('content');
+function renderResult(data, isSse) {
+  const c = document.getElementById('content');
   const stocks = data.stocks || [];
-
-  // 更新统计
-  document.getElementById('statTotal').textContent = data.total_screened || '--';
-  document.getElementById('statMatch').textContent = stocks.length;
-  const rate = data.total_screened > 0
-    ? (stocks.length / data.total_screened * 100).toFixed(2) + '%'
-    : '--';
-  document.getElementById('statRate').textContent = rate;
   
-  const timeStr = data.timestamp || '--';
-  document.getElementById('statTime').textContent = timeStr.includes(' ') ? timeStr.split(' ')[1] : timeStr;
-  document.getElementById('updateLabel').textContent = '更新于 ' + timeStr;
-
-  // 市场状态
+  document.getElementById('statTotal').textContent = data.total_screened||'--';
+  document.getElementById('statMatch').textContent = stocks.length;
+  document.getElementById('statRate').textContent = data.total_screened>0?(stocks.length/data.total_screened*100).toFixed(2)+'%':'--';
+  const ts = data.timestamp||'--';
+  document.getElementById('statTime').textContent = ts.includes(' ')?ts.split(' ')[1]:ts;
+  document.getElementById('updateLabel').textContent = '更新于 '+ts;
+  
   const dot = document.getElementById('statusDot');
-  if (data.market_open) {
-    dot.className = 'status-dot open';
-  } else {
-    dot.className = 'status-dot closed';
-  }
-
-  // SSE 更新提示
-  if (isSseUpdate) {
-    showToast(`📊 数据已更新 · ${stocks.length} 只标的`);
-  }
-
-  // 股票列表
-  if (stocks.length === 0) {
-    container.innerHTML = `<div class="empty">
-      <div class="icon">🔍</div>
-      <div class="title">暂无符合条件的个股</div>
-      <div class="desc">当前市场环境下尾盘选股策略未命中标的</div>
-    </div>`;
+  dot.className = 'status-dot '+(data.market_open?'open':'closed');
+  
+  if(isSse) showToast('📊 已更新 · '+stocks.length+' 只标的');
+  
+  if(!stocks.length) {
+    c.innerHTML = '<div class="empty"><div class="icon">🔍</div><div class="title">暂无符合条件</div><div class="desc">暂未命中选股策略标的</div></div>';
     return;
   }
-
-  let html = '<div class="stock-list">';
-  stocks.forEach((s, i) => {
-    const pctCls = s.pct_change >= 0 ? 'up' : 'down';
-    const rankCls = getRankClass(i);
-    const rankNum = i < 3 ? (i+1) : '';
-
-    html += `
-    <div class="stock-item" style="animation-delay:${i*0.03}s">
-      <div class="stock-top">
-        <div style="display:flex;align-items:flex-start;gap:8px;">
-          <div class="rank-badge ${rankCls}">${rankNum || i+1}</div>
-          <div class="stock-name-code">
-            <div class="name">${s.name}</div>
-            <div class="code">${s.code}</div>
-          </div>
-        </div>
-        <div class="stock-price">
-          <div class="price">${s.price?.toFixed(2) || '--'}</div>
-          <div class="change ${pctCls}${isSseUpdate?' flash':''}">${(s.pct_change>=0?'+':'')+(s.pct_change?.toFixed(2)||'--')}%</div>
-        </div>
-      </div>
-      <div class="stock-indicators">
-        <div class="indicator">
-          <div class="val ${valColor(s.volume_ratio,[3,1.5])}">${s.volume_ratio?.toFixed(2)||'--'}</div>
-          <div class="lbl">量比</div>
-        </div>
-        <div class="indicator">
-          <div class="val ${valColor(s.turnover_rate,[10,5])}">${s.turnover_rate?.toFixed(2)||'--'}%</div>
-          <div class="lbl">换手率</div>
-        </div>
-        <div class="indicator">
-          <div class="val mid">${s.amplitude?.toFixed(2)||'--'}%</div>
-          <div class="lbl">振幅</div>
-        </div>
-      </div>
-      <div class="stock-footer">
-        <div style="display:flex;gap:12px;font-size:11px;color:var(--text2);">
-          <span>💰 ${formatMoney(s.amount)}</span>
-          <span>🏢 ${s.float_market_cap_yi?.toFixed(0)||'--'}亿</span>
-        </div>
-        <div class="score-badge">⭐ ${s.score?.toFixed(0)||'--'} 分</div>
-      </div>
-    </div>`;
-  });
-  html += '</div>';
-  container.innerHTML = html;
-}
-
-// ==================== SSE 连接 ====================
-function connectSSE() {
-  if (eventSource) { eventSource.close(); }
-
-  eventSource = new EventSource('/api/stream');
-
-  eventSource.onopen = () => {
-    document.getElementById('connStatus').textContent = '✅ SSE 实时连接已建立';
-    document.getElementById('liveBadge').style.opacity = '1';
-  };
-
-  eventSource.onmessage = (event) => {
-    try {
-      const msg = JSON.parse(event.data);
-      if (msg.type === 'update' && msg.data) {
-        renderResult({...msg.data, market_open: msg.market_open, timestamp: msg.timestamp}, true);
-        // 重置倒计时
-        fetch('/api/status').then(r => r.json()).then(s => {
-          currentInterval = s.refresh_interval || 60;
-          refreshCountdown = currentInterval;
-        });
-      }
-    } catch(e) {}
-  };
-
-  eventSource.onerror = () => {
-    document.getElementById('connStatus').textContent = '⚠️ 连接断开,5秒后重连...';
-    document.getElementById('liveBadge').style.opacity = '0.4';
-    eventSource.close();
-    setTimeout(connectSSE, 5000);
-  };
-}
-
-// ==================== 倒计时进度条 ====================
-function updateCountdown() {
-  refreshCountdown--;
-  if (refreshCountdown <= 0) refreshCountdown = currentInterval;
-  const pct = ((currentInterval - refreshCountdown) / currentInterval) * 100;
-  document.getElementById('countdownFill').style.width = pct + '%';
-}
-
-// ==================== 手动刷新 ====================
-async function doRefresh() {
-  const container = document.getElementById('content');
-  container.innerHTML = '<div class="loading"><div class="spinner"></div><div style="color:var(--text2);font-size:13px;">正在刷新...</div></div>';
-  try {
-    const resp = await fetch('/api/refresh');
-    const data = await resp.json();
-    renderResult(data);
-    fetch('/api/status').then(r => r.json()).then(s => {
-      currentInterval = s.refresh_interval || 60;
-      refreshCountdown = currentInterval;
+  
+  let h = '<div class="stock-list">';
+  stocks.forEach((s,i) => {
+    const pctCls = s.pct_change>=0?'up':'down';
+    const sc = s.total||0;
+    const dims = ['trend','capital','sentiment','technical','valuation'];
+    const dimNames = {trend:'趋势',capital:'资金',sentiment:'情绪',technical:'技术',valuation:'估值'};
+    const dimCls = {trend:'dim-trend',capital:'dim-capital',sentiment:'dim-sentiment',technical:'dim-technical',valuation:'dim-valuation'};
+    const dimCol = {trend:'var(--blue)',capital:'var(--green)',sentiment:'var(--amber)',technical:'var(--purple)',valuation:'var(--cyan)'};
+    
+    // Fund flow display
+    const ff = s.fund_flow||{};
+    const mainNet = ff.main_net_inflow;
+    const mainRatio = ff.main_net_ratio;
+    
+    // Enhanced data
+    const en = s.enhanced||{};
+    const pe = en.pe, pb = en.pb, turnover = en.turnover, mktcap = en.mktcap_yi;
+    
+    h += '<div class="stock-item" style="animation-delay:'+(i*0.03)+'s">';
+    // Top: rank + name + price
+    h += '<div class="stock-top">';
+    h += '<div style="display:flex;align-items:flex-start;gap:8px;">';
+    h += '<div class="rank-badge '+rankClass(i)+'">'+(i<3?i+1:i+1)+'</div>';
+    h += '<div class="stock-name-code"><div class="name">'+s.name+'</div><div class="code">'+s.code+'</div></div>';
+    h += '</div>';
+    h += '<div class="stock-price"><div class="price">'+fmtNum(s.price,2)+'</div>';
+    h += '<div class="change '+pctCls+'">'+(s.pct_change>=0?'+':'')+fmtNum(s.pct_change,2)+'%</div></div>';
+    h += '</div>';
+    
+    // Score bar
+    h += '<div class="score-bar-wrap">';
+    h += '<div class="score-bar-header"><span style="font-size:10px;color:var(--text2);">综合评分</span><span class="score-total">'+fmtNum(sc,1)+'<span class="unit">/100</span></span></div>';
+    h += '<div class="score-dimensions">';
+    dims.forEach(d => {
+      const v = s[d]||0;
+      h += '<div class="score-dim '+dimCls[d]+'" style="width:'+v+'%" title="'+dimNames[d]+': '+v+'"></div>';
     });
+    h += '</div>';
+    h += '<div class="dim-labels">';
+    dims.forEach(d => {
+      h += '<span class="dim-label"><span class="dim-dot" style="background:'+dimCol[d]+';"></span>'+dimNames[d]+' '+fmtNum(s[d],0)+'</span>';
+    });
+    h += '</div></div>';
+    
+    // Detail grid
+    h += '<div class="stock-details">';
+    h += '<div class="detail-item"><div class="val '+valClass(turnover||0,[8,4])+'">'+fmtNum(turnover,1)+'%</div><div class="lbl">换手率</div></div>';
+    h += '<div class="detail-item"><div class="val">'+fmtMoney(mainNet)+'</div><div class="lbl">主力净流入</div></div>';
+    h += '<div class="detail-item"><div class="val '+valClass(mainRatio||0,[3,0])+'">'+fmtNum(mainRatio,2)+'%</div><div class="lbl">主力净占比</div></div>';
+    h += '<div class="detail-item"><div class="val">'+fmtNum(pe,1)+'</div><div class="lbl">市盈率PE</div></div>';
+    h += '<div class="detail-item"><div class="val">'+fmtNum(pb,1)+'</div><div class="lbl">市净率PB</div></div>';
+    h += '<div class="detail-item"><div class="val">'+fmtNum(mktcap,0)+'亿</div><div class="lbl">流通市值</div></div>';
+    h += '</div>';
+    
+    // Footer
+    h += '<div class="stock-footer"><span>振幅 '+fmtNum(s.amplitude,2)+'%</span><span>成交 '+fmtMoney(s.amount)+'</span></div>';
+    h += '</div>';
+  });
+  h += '</div>';
+  c.innerHTML = h;
+}
+
+function connectSSE() {
+  if(eventSource) eventSource.close();
+  eventSource = new EventSource('/api/stream');
+  eventSource.onopen = () => { document.getElementById('liveBadge').style.opacity='1'; };
+  eventSource.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if(msg.type==='update'&&msg.data) {
+        renderResult({...msg.data, market_open:msg.market_open, timestamp:msg.timestamp}, true);
+        fetch('/api/status').then(r=>r.json()).then(s=>{currentInterval=s.refresh_interval||60;refreshCountdown=currentInterval;});
+      }
+    } catch(_) {}
+  };
+  eventSource.onerror = () => { document.getElementById('liveBadge').style.opacity='0.4'; eventSource.close(); setTimeout(connectSSE,5000); };
+}
+
+function updateCountdown() {
+  refreshCountdown--; if(refreshCountdown<=0) refreshCountdown=currentInterval;
+  document.getElementById('countdownFill').style.width = ((currentInterval-refreshCountdown)/currentInterval*100)+'%';
+}
+
+async function doRefresh() {
+  document.getElementById('content').innerHTML = '<div class="loading"><div class="spinner"></div><div style="color:var(--text2);font-size:13px;">正在刷新分析...</div></div>';
+  try {
+    const r = await (await fetch('/api/refresh')).json();
+    renderResult(r);
+    const s = await (await fetch('/api/status')).json();
+    currentInterval = s.refresh_interval||60; refreshCountdown = currentInterval;
   } catch(e) {
-    container.innerHTML = `<div class="empty"><div class="icon">⚠️</div><div class="title">刷新失败</div><div class="desc">${e.message}</div></div>`;
+    document.getElementById('content').innerHTML = '<div class="empty"><div class="icon">⚠️</div><div class="title">刷新失败</div><div class="desc">'+e.message+'</div></div>';
   }
 }
 
-// ==================== 下拉刷新 ====================
 let touchStartY = 0;
-document.addEventListener('touchstart', e => {
-  touchStartY = e.touches[0].clientY;
-}, {passive: true});
-document.addEventListener('touchend', e => {
-  if (window.scrollY === 0 && e.changedTouches[0].clientY - touchStartY > 80) {
-    doRefresh();
-  }
-});
+document.addEventListener('touchstart', e => { touchStartY = e.touches[0].clientY; }, {passive:true});
+document.addEventListener('touchend', e => { if(window.scrollY===0 && e.changedTouches[0].clientY-touchStartY>80) doRefresh(); });
 
-// ==================== 初始化 ====================
 async function init() {
-  // 获取初始数据
-  try {
-    const resp = await fetch('/api/screen');
-    const data = await resp.json();
-    renderResult(data);
-  } catch(e) {
-    document.getElementById('content').innerHTML = `<div class="empty"><div class="icon">🔌</div><div class="title">连接失败</div><div class="desc">请确保服务已启动</div></div>`;
-  }
-
-  // 获取刷新间隔
-  try {
-    const s = await (await fetch('/api/status')).json();
-    currentInterval = s.refresh_interval || 60;
-    refreshCountdown = currentInterval;
-  } catch(e) {}
-
-  // 连接 SSE
+  try { renderResult(await (await fetch('/api/screen')).json()); } catch(e) {}
+  try { const s = await (await fetch('/api/status')).json(); currentInterval=s.refresh_interval||60; refreshCountdown=currentInterval; } catch(e) {}
   connectSSE();
-
-  // 启动倒计时
   countdownTimer = setInterval(updateCountdown, 1000);
 }
-
 init();
 </script>
 </body>
