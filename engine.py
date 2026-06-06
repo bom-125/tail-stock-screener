@@ -81,60 +81,81 @@ def get_stock_codes():
 
 def fetch_real_time_data():
     s = requests.Session(); s.trust_env = False
-    s.headers.update({"User-Agent":"Mozilla/5.0","Referer":"https://data.eastmoney.com/"})
     
-    all_rows = []
-    for page in [1, 2]:
-        try:
-            url = f"https://push2.eastmoney.com/api/qt/clist/get?pn={page}&pz=5000&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f2,f3,f4,f5,f6,f7,f8,f10,f12,f14,f15,f16,f17,f18,f20"
-            r = s.get(url, timeout=25)
-            if r.status_code != 200:
-                continue
+    # === Source 1: Eastmoney batch API (works best on Railway) ===
+    try:
+        s.headers.update({"User-Agent":"Mozilla/5.0","Referer":"https://data.eastmoney.com/"})
+        url = "https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=6000&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f2,f3,f4,f5,f6,f7,f8,f10,f12,f14,f15,f16,f17,f18,f20"
+        r = s.get(url, timeout=20)
+        if r.status_code == 200:
             data = r.json()
             stocks = data.get("data", {}).get("diff", [])
-            if not stocks:
-                break
-            
-            for st in stocks:
-                code = str(st.get("f12", "")).zfill(6)
-                if not code or len(code) != 6:
-                    continue
-                price = safe_float(st.get("f2"))
-                prev_close = safe_float(st.get("f18"))
-                if not price or price <= 0 or not prev_close or prev_close <= 0:
-                    continue
-                
-                pct = safe_float(st.get("f3"))
-                amp = safe_float(st.get("f7"))
-                turnover = safe_float(st.get("f8"))
-                vol_ratio = safe_float(st.get("f10"))
-                
-                row = {
-                    "code": code,
-                    "name": str(st.get("f14", "")),
-                    "open": safe_float(st.get("f17")),
-                    "prev_close": prev_close,
-                    "price": price,
-                    "high": safe_float(st.get("f15")),
-                    "low": safe_float(st.get("f16")),
-                    "volume": safe_float(st.get("f5")),
-                    "amount": safe_float(st.get("f6")),
-                    "pct_change": pct / 100 if pct and abs(pct) > 50 else pct,
-                    "amplitude": amp / 100 if amp and abs(amp) > 50 else amp,
-                    "turnover_rate": turnover / 100 if turnover and abs(turnover) > 50 else turnover,
-                    "volume_ratio": vol_ratio / 100 if vol_ratio and abs(vol_ratio) > 50 else vol_ratio,
-                    "total_mcap": safe_float(st.get("f20")),
-                }
-                all_rows.append(row)
-            
-            if len(stocks) < 5000:
-                break
-        except Exception as e:
-            print(f"[fetch] Page {page} error: {e}")
-            break
+            if stocks and len(stocks) > 100:
+                print(f"[fetch] Eastmoney: {len(stocks)} stocks")
+                all_rows = []
+                for st in stocks:
+                    code = str(st.get("f12", "")).zfill(6)
+                    if not code or len(code) != 6: continue
+                    price = safe_float(st.get("f2"))
+                    prev = safe_float(st.get("f18"))
+                    if not price or price <= 0 or not prev or prev <= 0: continue
+                    pct = safe_float(st.get("f3")); amp = safe_float(st.get("f7"))
+                    turnover = safe_float(st.get("f8")); vol_ratio = safe_float(st.get("f10"))
+                    all_rows.append({
+                        "code": code, "name": str(st.get("f14", "")),
+                        "open": safe_float(st.get("f17")), "prev_close": prev,
+                        "price": price, "high": safe_float(st.get("f15")),
+                        "low": safe_float(st.get("f16")), "volume": safe_float(st.get("f5")),
+                        "amount": safe_float(st.get("f6")),
+                        "pct_change": pct/100 if pct and abs(pct)>50 else pct,
+                        "amplitude": amp/100 if amp and abs(amp)>50 else amp,
+                        "turnover_rate": turnover/100 if turnover and abs(turnover)>50 else turnover,
+                        "volume_ratio": vol_ratio/100 if vol_ratio and abs(vol_ratio)>50 else vol_ratio,
+                        "total_mcap": safe_float(st.get("f20")),
+                    })
+                return pd.DataFrame(all_rows)
+    except Exception as e:
+        print(f"[fetch] Eastmoney failed: {e}")
     
-    print(f"[fetch] Got {len(all_rows)} stocks from Eastmoney")
-    return pd.DataFrame(all_rows) if all_rows else None
+    # === Source 2: Sina fallback ===
+    try:
+        print("[fetch] Trying Sina fallback...")
+        codes = get_stock_codes()
+        if codes:
+            s.headers.update({"User-Agent":"Mozilla/5.0","Referer":"https://finance.sina.com.cn/"})
+            rows = []
+            for i in range(0, len(codes), 200):
+                batch = codes[i:i+200]
+                url = "https://hq.sinajs.cn/list=" + ",".join([c["sid"] for c in batch])
+                try:
+                    r2 = s.get(url, timeout=15); r2.encoding = "gbk"
+                    for line in r2.text.strip().split("\n"):
+                        m = re.search(r'var hq_str_(\w+)="(.+)"', line)
+                        if not m: continue
+                        sid, vals = m.group(1), m.group(2).split(",")
+                        if len(vals) < 32: continue
+                        row = {
+                            "code": sid[2:], "name": vals[0],
+                            "open": safe_float(vals[1]), "prev_close": safe_float(vals[2]),
+                            "price": safe_float(vals[3]), "high": safe_float(vals[4]),
+                            "low": safe_float(vals[5]), "volume": safe_float(vals[8]),
+                            "amount": safe_float(vals[9]),
+                        }
+                        if row["price"] and row["price"]>0 and row["prev_close"] and row["prev_close"]>0:
+                            row["pct_change"] = round((row["price"]-row["prev_close"])/row["prev_close"]*100,2)
+                            row["amplitude"] = round((row["high"]-row["low"])/row["prev_close"]*100,2) if row["high"] and row["low"] else 0
+                            row["volume_ratio"] = 1.0
+                            rows.append(row)
+                except: pass
+                time.sleep(0.05)
+            if rows:
+                print(f"[fetch] Sina: {len(rows)} stocks")
+                return pd.DataFrame(rows)
+    except Exception as e:
+        print(f"[fetch] Sina fallback failed: {e}")
+    
+    print("[fetch] All sources failed")
+    return None
 
 def screen_stocks(df):
     if df is None or df.empty: return pd.DataFrame()
