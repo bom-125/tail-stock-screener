@@ -58,16 +58,28 @@ def broadcast_sse(data):
 def background_screen():
     """后台定时刷新选股结果"""
     global cached_result, last_update
-    # Run once immediately on startup
-    try:
-        print("[startup] Running initial screen (fast, no SEPA)...")
-        result = run_screen(enable_sepa=False)
-        with cache_lock:
-            cached_result = result
-            last_update = datetime.now().strftime('%H:%M:%S')
-        print(f"[startup] Initial screen done: {result.get('matched',0)} stocks")
-    except Exception as e:
-        print(f"[startup] Initial screen failed: {e}")
+    # Run initial screen with retries (Railway cold start may need warmup)
+    for attempt in range(5):
+        try:
+            print(f"[startup] Attempt {attempt+1}/5...")
+            result = run_screen(enable_sepa=False)
+            if result and result.get('success') and result.get('stocks') is not None:
+                with cache_lock:
+                    cached_result = result
+                    last_update = datetime.now().strftime('%H:%M:%S')
+                print(f"[startup] Screen done: {result.get('matched',0)} stocks")
+                break
+            elif result and result.get('error'):
+                print(f"[startup] API error: {result['error']}, retrying in 5s...")
+                time.sleep(5)
+            else:
+                print(f"[startup] No data, retrying in 3s...")
+                time.sleep(3)
+        except Exception as e:
+            print(f"[startup] Attempt {attempt+1} failed: {e}")
+            time.sleep(3)
+    else:
+        print("[startup] All attempts failed, will retry on next cycle")
     
     while True:
         interval = get_refresh_interval()
