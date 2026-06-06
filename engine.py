@@ -611,8 +611,8 @@ def run_screen():
     fund_flow = fetch_fund_flow_batch(top_codes)
     
     # SEPA: fetch kline for MA + limit-up analysis
-    top_codes_list = passed.head(ScreenerConfig.TOP_N * 2)["code"].tolist()
-    kline_data = fetch_kline_batch(top_codes_list, days=160)
+    top_codes_list = passed.head(min(ScreenerConfig.TOP_N, len(passed)))["code"].tolist()
+    kline_data = fetch_kline_batch(top_codes_list, days=60)
     enriched = enrich_stock_details(top_codes_list)
     
     stocks = []

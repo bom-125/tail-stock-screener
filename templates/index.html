@@ -373,7 +373,7 @@ async function doRefresh() {
   document.getElementById('content').innerHTML = '<div class="loading"><div class="spinner"></div><div style="color:var(--text2);font-size:13px;">正在刷新分析...</div></div>';
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
+    const timeout = setTimeout(() => controller.abort(), 35000);
     const r = await (await fetch('/api/refresh', { signal: controller.signal })).json();
     clearTimeout(timeout);
     renderResult(r);
@@ -396,16 +396,16 @@ async function init() {
   for (let retry = 0; retry < 3 && !loaded; retry++) {
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000);
+      const timeout = setTimeout(() => controller.abort(), 30000);
       const resp = await fetch('/api/screen', { signal: controller.signal });
       clearTimeout(timeout);
       
       if (resp.ok) {
         const data = await resp.json();
-        if (data && data.stocks && data.stocks.length > 0) {
+        if (data && data.stocks) {
           renderResult(data);
           loaded = true;
-        } else if (data && data.success) {
+        } else if (data && data.success !== undefined) {
           renderResult(data);
           loaded = true;
         }
