@@ -60,8 +60,8 @@ def background_screen():
     global cached_result, last_update
     # Run once immediately on startup
     try:
-        print("[startup] Running initial screen...")
-        result = run_screen()
+        print("[startup] Running initial screen (fast, no SEPA)...")
+        result = run_screen(enable_sepa=False)
         with cache_lock:
             cached_result = result
             last_update = datetime.now().strftime('%H:%M:%S')
@@ -74,7 +74,7 @@ def background_screen():
         
         if is_market_open() or datetime.now().weekday() < 5:
             try:
-                result = run_screen()
+                result = run_screen(enable_sepa=True)
                 with cache_lock:
                     cached_result = result
                     last_update = datetime.now().strftime('%H:%M:%S')
