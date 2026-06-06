@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""尾盘选股引擎 v3.1 - 五维综合评分（资金流向实测可用）"""
+"""灏剧洏閫夎偂寮曟搸 v3.1 - 浜旂淮缁煎悎璇勫垎锛堣祫閲戞祦鍚戝疄娴嬪彲鐢級"""
 import os
 for pv in ['HTTP_PROXY','HTTPS_PROXY','http_proxy','https_proxy','ALL_PROXY','all_proxy']:
     os.environ.pop(pv, None)
@@ -28,6 +28,8 @@ class ScreenerConfig:
     PRICE_MIN = 5.0
     PRICE_MAX = 80.0
     EXCLUDE_ST = True
+    EXCLUDE_CHINEXT = True
+    EXCLUDE_STAR = True
     TOP_N = 30
 
 _stock_cache = {'codes': None, 'time': 0}
@@ -88,7 +90,7 @@ def screen_stocks(df):
     cfg = ScreenerConfig()
     r = df.copy()
     if cfg.EXCLUDE_ST:
-        r = r[~r['name'].str.contains(r'ST|退|\*ST', na=False, regex=True)].copy()
+        r = r[~r['name'].str.contains(r'ST|閫€|\*ST', na=False, regex=True)].copy()
     r = r[(r['pct_change']>=cfg.PCT_CHANGE_MIN)&(r['pct_change']<=cfg.PCT_CHANGE_MAX)].copy()
     r = r[(r['price']>=cfg.PRICE_MIN)&(r['price']<=cfg.PRICE_MAX)].copy()
     if 'high' in r.columns and 'low' in r.columns:
@@ -137,7 +139,7 @@ def deep_score(row, fund_flow, rank_idx):
     vol = row.get('volume', 0) or 0
     amount = row.get('amount', 0) or 0
     
-    # ---- 1. TREND (25) 趋势强度 ----
+    # ---- 1. TREND (25) 瓒嬪娍寮哄害 ----
     trend = 0
     if 3.0 <= pct <= 5.5: trend += 15
     elif 2.0 <= pct < 3.0: trend += 11
@@ -148,7 +150,7 @@ def deep_score(row, fund_flow, rank_idx):
     elif vol > 3e6: trend += 5
     else: trend += 3
     
-    # ---- 2. CAPITAL (25) 资金认可 ----
+    # ---- 2. CAPITAL (25) 璧勯噾璁ゅ彲 ----
     capital = 0
     main_net = f.get('main_net_inflow', 0) or 0
     main_ratio = f.get('main_net_ratio', 0) or 0
@@ -170,7 +172,7 @@ def deep_score(row, fund_flow, rank_idx):
     elif amount > 5e7: capital += 3
     else: capital += 1
     
-    # ---- 3. SENTIMENT (15) 市场情绪 ----
+    # ---- 3. SENTIMENT (15) 甯傚満鎯呯华 ----
     sentiment = 0
     if 5 <= amp <= 9: sentiment += 8
     elif 3 <= amp <= 11: sentiment += 6
@@ -185,7 +187,7 @@ def deep_score(row, fund_flow, rank_idx):
         else: sentiment += 2
     else: sentiment += 2
     
-    # ---- 4. TECHNICAL (20) 技术形态 ----
+    # ---- 4. TECHNICAL (20) 鎶€鏈舰鎬?----
     technical = 0
     # Tail-market momentum (close vs open)
     if open_p > 0:
@@ -201,7 +203,7 @@ def deep_score(row, fund_flow, rank_idx):
     elif 2 <= amp <= 10: technical += 6
     else: technical += 3
     
-    # ---- 5. VALUE (15) 估值适配 ----
+    # ---- 5. VALUE (15) 浼板€奸€傞厤 ----
     value = 0
     # Price range scoring (small-mid cap proxy)
     if 8 <= price <= 30: value += 7
@@ -282,4 +284,4 @@ if __name__=='__main__':
     r = run_screen()
     print(f"Matched: {r['matched']}/{r['total_screened']}")
     for s in r['stocks'][:10]:
-        print(f"  {s['code']} {s['name']} {s['pct_change']}% | {s['total']}分 (T:{s['trend']} C:{s['capital']} S:{s['sentiment']} T:{s['technical']} V:{s['valuation']})")
+        print(f"  {s['code']} {s['name']} {s['pct_change']}% | {s['total']}鍒?(T:{s['trend']} C:{s['capital']} S:{s['sentiment']} T:{s['technical']} V:{s['valuation']})")
