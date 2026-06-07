@@ -357,7 +357,7 @@ HTML=r'''<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>尾盘选股器 v5 全策略版</title>
 <style>
 :root{
@@ -390,6 +390,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei
 .status{text-align:center;padding:12px;color:var(--muted);font-size:12px}
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:6px}
 @keyframes spin{to{transform:rotate(360deg)}}
+#loader-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(6,9,18,.9);z-index:999;justify-content:center;align-items:center;flex-direction:column}#loader-overlay.show{display:flex}
 .status-text{font-size:13px;margin-bottom:2px}.stage-text{font-size:11px;color:var(--muted);margin-top:4px;animation:pulse 1.5s ease infinite}@keyframes pulse{0%,100%{opacity:.6}50%{opacity:1}}
 .progress-bar{width:100%;height:6px;background:#1a2332;border-radius:4px;margin-top:10px;overflow:hidden;box-shadow:inset 0 1px 3px rgba(0,0,0,.3)}
 .progress-bar div{height:100%;background:linear-gradient(90deg,#3b82f6,#a371f7);border-radius:4px;transition:width .4s ease;box-shadow:0 0 10px rgba(88,166,255,.3)}
@@ -427,7 +428,7 @@ tr:hover{background:#151c28}
 </head>
 <body>
 <div class="container">
-<div class="header"><h1>尾盘选股器 v5</h1><p class="sub">7维AI评分 | 14:30-15:00尾盘T+1短线套利 | A股全市场</p></div>
+<div class="header"><h1>尾盘选股器 v5.4</h1><p class="sub">7维AI评分 | 14:30-15:00尾盘T+1短线套利 | A股全市场</p></div>
 <div class="banner">
 <div><b>评分维度：</b> <span class="hl">Price</span> | <span class="hl">Volume</span> | <span class="hl">Trend MA</span> | <span class="hl">K-Line</span></div>
 <div><b>优选条件：</b> Gain 3-5% | Amp <=5% | Bull MA | TO 5-10% | MCap 50-200B</div>
@@ -438,10 +439,11 @@ tr:hover{background:#151c28}
 <div class="field"><label>交易日期</label><input type="date" id="td" style="width:150px"></div>
 <div class="field"><label>评分门槛</label><select id="ms" style="width:130px"><option value="40">40 - 宽松</option><option value="50" selected>50 - 标准</option><option value="55">55 - 严格</option><option value="60">60 - 优质</option><option value="65">65 - 极品</option></select></div>
 <button class="btn" id="btn" onclick="scan()">🔍 开始扫描</button>
+<button class="btn-outline" onclick="testLoader()" style="font-size:11px">🧪 测试进度条</button>
 <button class="btn-outline" onclick="setToday()">📌 今日</button>
 <span style="font-size:11px;color:var(--muted);margin-left:8px" id="tip"></span>
 </div>
-<div id="loader" style="display:none;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:20px 24px;margin-bottom:10px;text-align:center">
+<div id="loader-overlay"><div id="loader" style="background:var(--card2);border:2px solid var(--accent);border-radius:14px;padding:30px 40px;text-align:center;max-width:500px;width:90%;box-shadow:0 0 40px rgba(88,166,255,.15)">
 <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:10px">
 <span class="spinner"></span>
 <span style="font-size:14px;font-weight:600;color:var(--text)" id="loader-title">正在扫描A股全市场...</span>
@@ -450,7 +452,7 @@ tr:hover{background:#151c28}
 <div style="width:100%;height:8px;background:#1a2332;border-radius:4px;overflow:hidden;box-shadow:inset 0 1px 3px rgba(0,0,0,.3)">
 <div id="pb" style="height:100%;width:0%;background:linear-gradient(90deg,#3b82f6,#a371f7);border-radius:4px;transition:width .3s ease;box-shadow:0 0 12px rgba(88,166,255,.4)"></div>
 </div>
-</div>
+</div></div>
 <div class="status" id="status"><span style="font-size:13px">点击「开始扫描」或「今日」| 实时约30秒 | 历史约1-2分钟</span></div>
 <div class="card" id="card" style="display:none">
 <div class="card-h"><b id="rd"></b><span id="rc"></span></div>
@@ -467,14 +469,20 @@ function getLatestTradeDay(d){var day=d.getDay();if(day===0){d.setDate(d.getDate
 document.getElementById("td").value=getLatestTradeDay(new Date());
 function setToday(){var d=new Date();document.getElementById("td").value=getLatestTradeDay(d);scan()}
 
+function testLoader(){
+var overlay=document.getElementById("loader-overlay"),pb=document.getElementById("pb"),ls=document.getElementById("loader-stage");
+overlay.classList.add("show");pb.style.width="0%";ls.textContent="测试加载效果中...";
+var w=0;var t=setInterval(function(){w+=5;if(w>=100){w=100;clearInterval(t);setTimeout(function(){overlay.classList.remove("show")},500)}pb.style.width=w+"%";ls.textContent="加载进度 "+w+"%"},150);
+}
+
 async function scan(){
 var ms=document.getElementById("ms").value,td=document.getElementById("td").value;
 var isToday=(td===getLatestTradeDay(new Date()));
 var b=document.getElementById("btn"),s=document.getElementById("status"),c=document.getElementById("card"),tip=document.getElementById("tip");
-var loader=document.getElementById("loader"),lt=document.getElementById("loader-title"),ls=document.getElementById("loader-stage");
+var overlay=document.getElementById("loader-overlay"),loader=document.getElementById("loader"),lt=document.getElementById("loader-title"),ls=document.getElementById("loader-stage");
 
 b.disabled=true;b.textContent="扫描中...";c.style.display="none";tip.textContent="";
-s.style.display="none";loader.style.display="block";
+s.style.display="none";overlay.classList.add("show");
 var estTime=isToday?"约30秒":"约1-2分钟";
 lt.textContent="正在扫描A股全市场...";
 ls.textContent="预计"+estTime+" | 正在获取A股列表...";
@@ -497,13 +505,13 @@ ls.textContent="预计"+estTime+" | "+stages[si];
 try{
 var resp=await fetch(url,{signal:AbortSignal.timeout(180000)}),d=await resp.json();
 clearInterval(ptimer);
-pb.style.width="100%";loader.style.display="none";s.style.display="block";
+pb.style.width="100%";overlay.classList.remove("show");s.style.display="block";
 if(d.error){s.innerHTML="<span style=\"color:var(--red)\">错误: "+d.error+"</span>"}
 else if(d.count===0){s.innerHTML="<span style=\"color:var(--orange)\">无符合条件的标的，请降低评分门槛重试</span>"}
 else{s.innerHTML="<span style=\"color:var(--green)\">扫描完成，共发现 "+d.count+" 只标的</span>";render(d)}
 tip.textContent="耗时 "+(d.elapsed||0)+"秒 | "+d.mode}catch(e){
 clearInterval(ptimer);
-loader.style.display="none";s.style.display="block";
+overlay.classList.remove("show");s.style.display="block";
 s.innerHTML="<span style=\"color:var(--red)\">连接失败: "+e.message+"</span>";tip.textContent=""}
 b.disabled=false;b.textContent="开始扫描"} 开始扫描"}
 document.getElementById("rc").textContent=d.count+" 只 | 耗时"+d.elapsed+"秒";
@@ -561,7 +569,7 @@ var rows=[
 ["风险提示",dt["risk"]||"--"]
 ];
 var rowHtml=rows.map(function(r){return "<div class=\"row\"><span class=\"label\">"+r[0]+"</span><span class=\"val\">"+r[1]+"</span></div>"}).join("");
-content.innerHTML="<button class=\"close\" onclick=\"document.getElementById("modal-overlay").classList.remove("active")\">&times;</button><h3>"+x.code+" "+x.name+"</h3>"+rowHtml+"<div class=\"advice-box\"><b>操作建议：</b><br>"+dt["advice_detail"]+"</div>";
+content.innerHTML="<button class=\"close\" onclick='document.getElementById(\"modal-overlay\").classList.remove(\"active\")'>&times;</button><h3>"+x.code+" "+x.name+"</h3>"+rowHtml+"<div class=\"advice-box\"><b>操作建议：</b><br>"+dt["advice_detail"]+"</div>";
 overlay.classList.add("active")}
 
 function closeModal(e){if(e.target===document.getElementById("modal-overlay")){document.getElementById("modal-overlay").classList.remove("active")}}
