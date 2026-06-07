@@ -197,9 +197,9 @@ function renderResult(data, isSse) {
     if(!stocks.length) {
     let emptyMsg = '';
     if (data.is_historical) {
-      emptyMsg = '<div class="empty"><div class="icon">??</div><div class="title">???????</div><div class="desc">??? ' + (data.total_screened||0) + ' ??????????????</div></div>';
+      emptyMsg = '<div class="empty"><div class="icon">📊</div><div class="title">该交易日无推荐</div><div class="desc">筛选出 ' + (data.total_screened||0) + ' 只标的，但均未达到推荐标准。</div></div>';
     } else {
-      emptyMsg = '<div class="empty"><div class="icon">??</div><div class="title">???????</div><div class="desc">??? ' + (data.total_screened||0) + ' ???????????????????????</div></div>';
+      emptyMsg = '<div class="empty"><div class="icon">🔒</div><div class="title">今日无十分推荐</div><div class="desc">筛选出 ' + (data.total_screened||0) + ' 只标的，但均未达到推荐标准。建议等待更好机会。</div></div>';
     }
     c.innerHTML = emptyMsg;
     return;
@@ -223,7 +223,7 @@ function renderResult(data, isSse) {
     const en = s.enhanced||{};
     const pe = en.pe, pb = en.pb, turnover = en.turnover, mktcap = en.mktcap_yi;
     // Recommendation badge - MUST be before usage
-    const reco = s.recommendation || (s.tier==='strong'?'????':s.tier==='good'?'????':s.tier==='watch'?'????':'????');
+    const reco = s.recommendation || (s.tier==='strong'?'强烈推荐':s.tier==='good'?'可以关注':s.tier==='watch'?'一般关注':'风险提示');
     const recoLevel = s.reco_level || s.tier || 'watch';
     
         // Tier-based styling
@@ -419,10 +419,10 @@ async function loadHistory() {
   if (!date) return;
   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
   if (!dateRegex.test(date)) {
-    document.getElementById('content').innerHTML = '<div class="empty"><div class="icon">??</div><div class="title">??????</div><div class="desc">??? YYYY-MM-DD ??</div></div>';
+    document.getElementById('content').innerHTML = '<div class="empty"><div class="icon">⚠️</div><div class="title">日期格式错误</div><div class="desc">请使用 YYYY-MM-DD 格式</div></div>';
     return;
   }
-  document.getElementById('content').innerHTML = '<div class="loading"><div class="spinner"></div><div style="color:var(--text2);font-size:13px;">?? ' + date + ' ????...</div></div>';
+  document.getElementById('content').innerHTML = '<div class="loading"><div class="spinner"></div><div style="color:var(--text2);font-size:13px;">加载 ' + date + ' 历史数据...</div></div>';
   let loaded = false;
   for (let retry = 0; retry < 3 && !loaded; retry++) {
     try {
@@ -441,13 +441,13 @@ async function loadHistory() {
     } catch(e) {
       console.log('History retry '+(retry+1)+': '+e.message);
       if (retry < 2) {
-        document.getElementById('content').innerHTML = '<div class="loading"><div class="spinner"></div><div style="color:var(--text2);font-size:13px;">??? ('+(retry+2)+'/3)...</div></div>';
+        document.getElementById('content').innerHTML = '<div class="loading"><div class="spinner"></div><div style="color:var(--text2);font-size:13px;">重试中 ('+(retry+2)+'/3)...</div></div>';
         await new Promise(r => setTimeout(r, 4000));
       }
     }
   }
   if (!loaded) {
-    document.getElementById('content').innerHTML = '<div class="empty"><div class="icon">??</div><div class="title">????</div><div class="desc">?????????????????</div></div>';
+    document.getElementById('content').innerHTML = '<div class="empty"><div class="icon">⚠️</div><div class="title">加载失败</div><div class="desc">请检查日期是否为交易日，或稍后重试</div></div>';
   }
 }
 
