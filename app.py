@@ -441,6 +441,16 @@ tr:hover{background:#151c28}
 <button class="btn-outline" onclick="setToday()">📌 今日</button>
 <span style="font-size:11px;color:var(--muted);margin-left:8px" id="tip"></span>
 </div>
+<div id="loader" style="display:none;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:20px 24px;margin-bottom:10px;text-align:center">
+<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:10px">
+<span class="spinner"></span>
+<span style="font-size:14px;font-weight:600;color:var(--text)" id="loader-title">正在扫描A股全市场...</span>
+</div>
+<div style="font-size:11px;color:var(--muted);margin-bottom:12px" id="loader-stage">预计约30秒 | 正在获取A股列表...</div>
+<div style="width:100%;height:8px;background:#1a2332;border-radius:4px;overflow:hidden;box-shadow:inset 0 1px 3px rgba(0,0,0,.3)">
+<div id="pb" style="height:100%;width:0%;background:linear-gradient(90deg,#3b82f6,#a371f7);border-radius:4px;transition:width .3s ease;box-shadow:0 0 12px rgba(88,166,255,.4)"></div>
+</div>
+</div>
 <div class="status" id="status"><span style="font-size:13px">点击「开始扫描」或「今日」| 实时约30秒 | 历史约1-2分钟</span></div>
 <div class="card" id="card" style="display:none">
 <div class="card-h"><b id="rd"></b><span id="rc"></span></div>
@@ -461,38 +471,41 @@ async function scan(){
 var ms=document.getElementById("ms").value,td=document.getElementById("td").value;
 var isToday=(td===getLatestTradeDay(new Date()));
 var b=document.getElementById("btn"),s=document.getElementById("status"),c=document.getElementById("card"),tip=document.getElementById("tip");
+var loader=document.getElementById("loader"),lt=document.getElementById("loader-title"),ls=document.getElementById("loader-stage");
+
 b.disabled=true;b.textContent="扫描中...";c.style.display="none";tip.textContent="";
+s.style.display="none";loader.style.display="block";
 var estTime=isToday?"约30秒":"约1-2分钟";
-s.innerHTML="<div class=\"status-text\"><span class=\"spinner\"></span>正在扫描A股全市场...</div><div class=\"stage-text\">预计"+estTime+" | 正在获取A股列表...</div><div class=\"progress-bar\"><div id=\"pb\" style=\"width:0%\"></div></div>";
+lt.textContent="正在扫描A股全市场...";
+ls.textContent="预计"+estTime+" | 正在获取A股列表...";
+var pb=document.getElementById("pb");pb.style.width="0%";
+
 var url="/api/scan?min_score="+ms;if(!isToday){url+="&date="+td}
 
-// Delay fetch slightly to let UI render
-await new Promise(function(r){setTimeout(r,150)});
+await new Promise(function(r){setTimeout(r,100)});
 
 var elapsed=0;
 var stages=["正在获取A股列表...","正在拉取实时行情...","正在逐只评分计算...","正在排序筛选...","即将完成..."];
 var ptimer=setInterval(function(){
 elapsed+=0.3;
-var pct=Math.min(90,elapsed/(isToday?30:90)*100);
-var pb=document.getElementById("pb");if(pb)pb.style.width=pct+"%";
-var stageEl=document.querySelector(".stage-text");
-if(stageEl){
+var pct=Math.min(92,elapsed/(isToday?30:90)*100);
+pb.style.width=pct+"%";
 var si=Math.min(stages.length-1,Math.floor(elapsed/(isToday?8:25)));
-stageEl.textContent="预计"+estTime+" | "+stages[si];
-}
+ls.textContent="预计"+estTime+" | "+stages[si];
 },300);
 
 try{
 var resp=await fetch(url,{signal:AbortSignal.timeout(180000)}),d=await resp.json();
 clearInterval(ptimer);
-var pb=document.getElementById("pb");if(pb)pb.style.width="100%";
-if(d.error){s.innerHTML="<span style=\"color:var(--red)\">\u26a0\ufe0f 错误: "+d.error+"</span>"}
-else if(d.count===0){s.innerHTML="<span style=\"color:var(--orange)\">\u{1f614} 无符合条件的标的，请降低评分门槛重试</span>"}
-else{s.innerHTML="<span style=\"color:var(--green)\">\u2705 扫描完成，共发现 "+d.count+" 只标的</span>";render(d)}
-tip.textContent="\u23f1 耗时 "+(d.elapsed||0)+"秒 | "+d.mode}catch(e){
+pb.style.width="100%";loader.style.display="none";s.style.display="block";
+if(d.error){s.innerHTML="<span style=\"color:var(--red)\">错误: "+d.error+"</span>"}
+else if(d.count===0){s.innerHTML="<span style=\"color:var(--orange)\">无符合条件的标的，请降低评分门槛重试</span>"}
+else{s.innerHTML="<span style=\"color:var(--green)\">扫描完成，共发现 "+d.count+" 只标的</span>";render(d)}
+tip.textContent="耗时 "+(d.elapsed||0)+"秒 | "+d.mode}catch(e){
 clearInterval(ptimer);
-s.innerHTML="<span style=\"color:var(--red)\">\u274c 连接失败: "+e.message+"</span>";tip.textContent=""}
-b.disabled=false;b.textContent="\u{1f50d} 开始扫描"}
+loader.style.display="none";s.style.display="block";
+s.innerHTML="<span style=\"color:var(--red)\">连接失败: "+e.message+"</span>";tip.textContent=""}
+b.disabled=false;b.textContent="开始扫描"} 开始扫描"}
 document.getElementById("rc").textContent=d.count+" 只 | 耗时"+d.elapsed+"秒";
 var h="";
 d.results.forEach(function(x,i){
