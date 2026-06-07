@@ -36,7 +36,7 @@ def get_stocks():
             if not data: break
             for x in data:
                 c,n=x.get("code",""),x.get("name","")
-                if c and n and all(k not in n.upper() for k in ["ST","\u9000"]):
+                if c and n and all(k not in n.upper() for k in ["ST","\u9000"]) and not c.startswith(("300","301","688","689")):
                     all_stocks.append((c,n))
         except: break
     CACHE["stocks"]=all_stocks
@@ -417,7 +417,7 @@ tr:hover{background:#151c28}
 <div class="banner">
 <div><b>评分维度：</b> <span class="hl">Price</span> | <span class="hl">Volume</span> | <span class="hl">Trend MA</span> | <span class="hl">K-Line</span></div>
 <div><b>优选条件：</b> Gain 3-5% | Amp <=5% | Bull MA | TO 5-10% | MCap 50-200B</div>
-<div><b>风控排除：</b> <span class="dg">ST/退市</span> | <span class="dg">长上影出货</span> | <span class="dg">无量空涨</span> | <span class="dg">高位放量</span></div>
+<div><b>风控排除：</b> <span class="dg">ST/退市/创业板/科创板</span> | <span class="dg">长上影出货</span> | <span class="dg">无量空涨</span> | <span class="dg">高位放量</span></div>
 <div><b>加分项：</b> 涨停基因 | 低位启动 | 放量上涨 | 独立抗跌</div>
 </div>
 <div class="controls">
@@ -447,19 +447,19 @@ async function scan(){
 var ms=document.getElementById("ms").value,td=document.getElementById("td").value;
 var isToday=(td===getLatestTradeDay(new Date()));
 var b=document.getElementById("btn"),s=document.getElementById("status"),c=document.getElementById("card"),tip=document.getElementById("tip");
-b.disabled=true;b.textContent="扫描中...";s.innerHTML="<span class=\"spinner\"></span>Scanning A-Share market...<div class=\"progress-bar\"><div id=\"pb\" style=\"width:5%\"></div></div>";c.style.display="none";tip.textContent="";
+b.disabled=true;b.textContent="扫描中...";c.style.display="none";tip.textContent="";
+var estTime=isToday?"约30秒":"约1-2分钟";
+s.innerHTML="<span class=\"spinner\"></span>正在扫描A股全市场... 预计"+estTime+"<div class=\"progress-bar\"><div id=\"pb\" style=\"width:0%\"></div></div><div id=\"pt\" style=\"font-size:10px;margin-top:4px;color:var(--muted)\">正在获取A股列表...</div>";
 var url="/api/scan?min_score="+ms;if(!isToday){url+="&date="+td}
+var elapsed=0;var ptimer=setInterval(function(){elapsed+=0.3;var pct=Math.min(90,elapsed/(isToday?30:90)*100);var pb=document.getElementById("pb");if(pb)pb.style.width=pct+"%";var pt=document.getElementById("pt");if(pt){if(elapsed<3)pt.textContent="正在获取A股列表...";else if(elapsed<8)pt.textContent="正在拉取实时行情...";else if(elapsed<15)pt.textContent="正在逐只评分计算...";else if(elapsed<25)pt.textContent="正在排序筛选...";else pt.textContent="即将完成..."}},300);
 try{
 var resp=await fetch(url,{signal:AbortSignal.timeout(180000)}),d=await resp.json();
-if(d.error){s.textContent="错误: "+d.error}
-else if(d.count===0){s.innerHTML="<span style=\"color:var(--orange)\"\>No results. Try lowering min score.</span>"}
-else{s.innerHTML="<span style=\"color:var(--green)\"\>Scan complete</span>";render(d)}
-tip.textContent="耗时 "+(d.elapsed||0)+"秒"}catch(e){s.textContent="连接失败: "+e.message;tip.textContent=""}
+clearInterval(ptimer);var pb=document.getElementById("pb");if(pb)pb.style.width="100%";
+if(d.error){s.innerHTML="<span style=\"color:var(--red)\">错误: "+d.error+"</span>"}
+else if(d.count===0){s.innerHTML="<span style=\"color:var(--orange)\">无符合条件的标的，请降低评分门槛重试</span>"}
+else{s.innerHTML="<span style=\"color:var(--green)\">扫描完成，共发现 "+d.count+" 只标的</span>";render(d)}
+tip.textContent="耗时 "+(d.elapsed||0)+"秒 | "+d.mode}catch(e){clearInterval(ptimer);s.innerHTML="<span style=\"color:var(--red)\">连接失败: "+e.message+"</span>";tip.textContent=""}
 b.disabled=false;b.textContent="开始扫描"}
-
-function render(d){
-var card=document.getElementById("card");card.style.display="block";
-document.getElementById("rd").textContent="扫描结果 | "+d.date;
 document.getElementById("rc").textContent=d.count+" 只 | 耗时"+d.elapsed+"秒";
 var h="";
 d.results.forEach(function(x,i){
