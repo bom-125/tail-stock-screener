@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>灏剧洏閫夎偂鍣?/title>
+<title>鐏忓墽娲忛柅澶庡亗閸?/title>
 <style>
   :root {
     --bg: #0a0e17;
@@ -115,40 +115,40 @@
 <body>
 <div class="container">
   <div class="header">
-    <h1>馃搱 灏剧洏閫夎偂鍣?/h1>
-    <p>鍩轰簬灏剧洏鏀鹃噺銆佷环鏍肩獊鐮寸瓑鎶€鏈寚鏍囷紝绛涢€夋鏃ユ綔鍔涜偂</p>
+    <h1>棣冩惐 鐏忓墽娲忛柅澶庡亗閸?/h1>
+    <p>閸╄桨绨亸鍓ф磸閺€楣冨櫤閵嗕椒鐜弽鑲╃崐閻鐡戦幎鈧張顖涘瘹閺嶅浄绱濈粵娑⑩偓澶嬵偧閺冦儲缍旈崝娑滃亗</p>
   </div>
 
   <div class="controls">
     <div class="field">
-      <label>鐩爣鏃ユ湡</label>
-      <span style="color:#64748b;font-size:14px;padding:10px 0" id="dateLabel">实时行情</span>
+      <label>閻╊喗鐖ｉ弮銉︽埂</label>
+      <span style="color:#64748b;font-size:14px;padding:10px 0" id="dateLabel">瀹炴椂琛屾儏</span>
     </div>
     <div class="field">
-      <label>鏈€浣庤瘎鍒?/label>
+      <label>閺堚偓娴ｅ氦鐦庨崚?/label>
       <select id="scoreInput" style="width:100px">
-        <option value="30">30 - 瀹芥澗</option>
-        <option value="40" selected>40 - 閫備腑</option>
-        <option value="50">50 - 涓ユ牸</option>
-        <option value="60">60 - 绮鹃€?/option>
+        <option value="30">30 - 鐎硅姤婢?/option>
+        <option value="40" selected>40 - 闁倷鑵?/option>
+        <option value="50">50 - 娑撱儲鐗?/option>
+        <option value="60">60 - 缁箖鈧?/option>
       </select>
     </div>
-    <button class="btn" id="scanBtn" onclick="startScan()">寮€濮嬫壂鎻?/button>
+    <button class="btn" id="scanBtn" onclick="startScan()">瀵偓婵澹傞幓?/button>
   </div>
 
-  <div class="status" id="status">杈撳叆鏃ユ湡锛岀偣鍑?寮€濮嬫壂鎻?</div>
+  <div class="status" id="status">鏉堟挸鍙嗛弮銉︽埂閿涘瞼鍋ｉ崙?瀵偓婵澹傞幓?</div>
 
   <div class="results-card" id="resultsCard" style="display:none">
     <div class="results-header">
-      <span>馃搳 鎵弿缁撴灉 鈥?<span id="resultDate"></span></span>
+      <span>棣冩惓 閹殿偅寮跨紒鎾寸亯 閳?<span id="resultDate"></span></span>
       <span class="results-count" id="resultCount"></span>
     </div>
     <div style="overflow-x:auto">
       <table>
         <thead>
           <tr>
-            <th>鎺掑悕</th><th>浠ｇ爜</th><th>鍚嶇О</th><th>缁煎悎璇勫垎</th>
-            <th>鏀剁洏浠?/th><th>鎹㈡墜鐜?/th><th>灏剧洏鎷夊崌</th><th>鏀鹃噺姣?/th>
+            <th>閹烘帒鎮?/th><th>娴狅絿鐖?/th><th>閸氬秶袨</th><th>缂佺厧鎮庣拠鍕瀻</th>
+            <th>閺€鍓佹磸娴?/th><th>閹广垺澧滈悳?/th><th>鐏忓墽娲忛幏澶婂磳</th><th>閺€楣冨櫤濮?/th>
           </tr>
         </thead>
         <tbody id="tableBody"></tbody>
@@ -160,7 +160,7 @@
 <script>
 const API = "/api/scan";
 
-document.getElementById('dateLabel').textContent = new Date().toISOString().split('T')[0];
+// date will be updated from API response
 
 async function startScan() {
   var date = document.getElementById("dateInput").value;
@@ -173,8 +173,8 @@ async function startScan() {
   var card = document.getElementById("resultsCard");
   
   btn.disabled = true;
-  btn.textContent = "鎵弿涓?..";
-  status.innerHTML = '<span class="spinner"></span> 姝ｅ湪鎵弿鍏ㄥ競鍦鸿偂绁紝棰勮1-3鍒嗛挓...';
+  btn.textContent = "閹殿偅寮挎稉?..";
+  status.innerHTML = '<span class="spinner"></span> 濮濓絽婀幍顐ｅ伎閸忋劌绔堕崷楦垮亗缁侇煉绱濇０鍕吀1-3閸掑棝鎸?..';
   status.className = "status";
   card.style.display = "none";
   
@@ -185,10 +185,10 @@ async function startScan() {
     var data = await resp.json();
     
     if (data.error) {
-      status.textContent = "鉂?" + data.error;
+      status.textContent = "閴?" + data.error;
       status.className = "status error";
     } else if (data.count === 0) {
-      status.innerHTML = "鈿狅笍 鏈壘鍒扮鍚堟潯浠剁殑鑲＄エ锛屽缓璁檷浣庤瘎鍒嗛棬妲?;
+      status.innerHTML = "閳跨媴绗?閺堫亝澹橀崚鎵儊閸氬牊娼禒鍓佹畱閼诧紕銈ㄩ敍灞界紦鐠侇噣妾锋担搴ょ槑閸掑棝妫Σ?;
       status.className = "status";
       card.style.display = "none";
     } else {
@@ -197,12 +197,12 @@ async function startScan() {
       renderResults(data);
     }
   } catch (e) {
-    status.textContent = "鉂?杩炴帴澶辫触锛岃纭鏈嶅姟鍣ㄥ凡鍚姩";
+    status.textContent = "閴?鏉╃偞甯存径杈Е閿涘矁顕涵顔款吇閺堝秴濮熼崳銊ュ嚒閸氼垰濮?;
     status.className = "status error";
   }
   
   btn.disabled = false;
-  btn.textContent = "寮€濮嬫壂鎻?;
+  btn.textContent = "瀵偓婵澹傞幓?;
 }
 
 function renderResults(data) {
@@ -211,7 +211,7 @@ function renderResults(data) {
   
   document.getElementById("resultDate").textContent = data.date;
   document.getElementById("resultCount").textContent = 
-    data.count + " 鍙?| 鑰楁椂 " + data.elapsed + "s";
+    data.count + " 閸?| 閼版妞?" + data.elapsed + "s";
   
   var tbody = document.getElementById("tableBody");
   tbody.innerHTML = data.results.map(function(r, i) {
@@ -220,12 +220,12 @@ function renderResults(data) {
     return "<tr>" +
       "<td>" + (i+1) + "</td>" +
       "<td style='font-weight:600'>" + r.code + "</td>" +
-      "<td>" + r.name + (det["娑ㄥ仠闄勮繎"] ? " <span class='tag tag-gold'>寮哄娍</span>" : "") + "</td>" +
+      "<td>" + r.name + (det["濞戙劌浠犻梽鍕箮"] ? " <span class='tag tag-gold'>瀵搫濞?/span>" : "") + "</td>" +
       "<td><span class='score-badge " + cls + "'>" + r.score + "</span></td>" +
       "<td>" + (r.close ? r.close.toFixed(2) : "--") + "</td>" +
       "<td>" + (r.turnover ? r.turnover.toFixed(1) + "%" : "--") + "</td>" +
-      "<td>" + (det["灏剧洏鎷夊崌"] || "--") + "</td>" +
-      "<td>" + (det["鏀鹃噺姣?] || "--") + "</td>" +
+      "<td>" + (det["鐏忓墽娲忛幏澶婂磳"] || "--") + "</td>" +
+      "<td>" + (det["閺€楣冨櫤濮?] || "--") + "</td>" +
       "</tr>";
   }).join("");
 }
