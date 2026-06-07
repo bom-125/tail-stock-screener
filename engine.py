@@ -191,7 +191,7 @@ def fetch_fund_flow_batch(codes):
             continue
         try:
             market = 1 if code.startswith(('6','9')) else 0
-            url = f'https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get?lmt=1&klt=1&secid={market}.{code}&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64'
+            url = f'https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get?lmt=1&klt=1&secid={market}.{code}&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f58,f59,f60,f61,f62,f63,f64'
             r = s.get(url, timeout=10)
             if r.status_code==200:
                 data = json.loads(r.text)
@@ -216,7 +216,7 @@ def fetch_kline_batch(codes, days=160):
     for code in codes:
         try:
             market = 0 if code.startswith(("0","3","2")) else 1
-            url = f"https://push2his.eastmoney.com/api/qt/stock/kline/get?secid={market}.{code}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57&klt=101&fqt=0&end=20500101&lmt={days}"
+            url = f"https://push2his.eastmoney.com/api/qt/stock/kline/get?secid={market}.{code}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=0&end=20500101&lmt={days}"
             r = s.get(url, timeout=10)
             if r.status_code == 200:
                 klines = r.json().get("data", {}).get("klines", [])
@@ -680,7 +680,7 @@ def run_historical_screen(target_date):
         try:
             market = 0 if c["code"].startswith(("0","3","2")) else 1
             # Single API call: get 7 calendar days (~5 trading days) including target
-            url = f"https://push2his.eastmoney.com/api/qt/stock/kline/get?secid={market}.{c['code']}&klt=101&fqt=0&beg={start_str}&end={end_str}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57&lmt=10"
+            url = f"https://push2his.eastmoney.com/api/qt/stock/kline/get?secid={market}.{c['code']}&klt=101&fqt=0&beg={start_str}&end={end_str}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&lmt=10"
             r = sess.get(url, timeout=8)
             if r.status_code != 200:
                 return None
@@ -712,9 +712,7 @@ def run_historical_screen(target_date):
             low = float(target_kl[4])
             vol = float(target_kl[5])
             amt = float(target_kl[6]) if len(target_kl) > 6 else 0
-            turnover_rate = float(target_kl[7]) if len(target_kl) > 7 and target_kl[7] else None
-            amp_pct = float(target_kl[8]) if len(target_kl) > 8 and target_kl[8] else None
-            pct_change_pct = float(target_kl[9]) if len(target_kl) > 9 and target_kl[9] else None
+            turnover_rate = float(target_kl[10]) if len(target_kl) > 10 and target_kl[10] else None
             
             prev_close = float(prev_kl[2])
             if close_p <= 0 or prev_close <= 0:
