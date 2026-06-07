@@ -194,8 +194,14 @@ function renderResult(data, isSse) {
   
   if(isSse) showToast('📊 已更新 · '+stocks.length+' 只标的');
   
-  if(!stocks.length) {
-    c.innerHTML = '<div class="empty"><div class="icon">💭</div><div class="title">今日无十分推荐</div><div class="desc">筛选出 ' + data.total_screened + ' 只标的，但均未达到推荐标准。建议等待更好机会。</div></div>';
+    if(!stocks.length) {
+    let emptyMsg = '';
+    if (data.is_historical) {
+      emptyMsg = '<div class="empty"><div class="icon">??</div><div class="title">???????</div><div class="desc">??? ' + (data.total_screened||0) + ' ??????????????</div></div>';
+    } else {
+      emptyMsg = '<div class="empty"><div class="icon">??</div><div class="title">???????</div><div class="desc">??? ' + (data.total_screened||0) + ' ???????????????????????</div></div>';
+    }
+    c.innerHTML = emptyMsg;
     return;
   }
   
@@ -216,6 +222,9 @@ function renderResult(data, isSse) {
     // Enhanced data
     const en = s.enhanced||{};
     const pe = en.pe, pb = en.pb, turnover = en.turnover, mktcap = en.mktcap_yi;
+    // Recommendation badge - MUST be before usage
+    const reco = s.recommendation || (s.tier==='strong'?'????':s.tier==='good'?'????':s.tier==='watch'?'????':'????');
+    const recoLevel = s.reco_level || s.tier || 'watch';
     
         // Tier-based styling
     const tier = s.tier || 'watch';
@@ -231,9 +240,6 @@ function renderResult(data, isSse) {
     h += '<div class="change '+pctCls+'">'+(s.pct_change>=0?'+':'')+fmtNum(s.pct_change,2)+'%</div></div>';
     h += '</div>';
     
-    // Recommendation badge
-    const reco = s.recommendation || '';
-    const recoLevel = s.reco_level || '';
     
     // Score bar
     h += '<div class="score-bar-wrap">';
@@ -411,15 +417,37 @@ document.addEventListener('touchend', e => { if(window.scrollY===0 && e.changedT
 async function loadHistory() {
   const date = document.getElementById('histDate').value;
   if (!date) return;
-  document.getElementById('content').innerHTML = '<div class="loading"><div class="spinner"></div><div style="color:var(--text2);font-size:13px;">加载' + date + '历史数据...</div></div>';
-  try {
-    const r = await (await fetch('/api/history?date=' + date)).json();
-    if (r.success || r.error) {
-      renderResult(r);
-      document.getElementById('updateLabel').textContent = '历史: ' + date;
+  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  if (!dateRegex.test(date)) {
+    document.getElementById('content').innerHTML = '<div class="empty"><div class="icon">??</div><div class="title">??????</div><div class="desc">??? YYYY-MM-DD ??</div></div>';
+    return;
+  }
+  document.getElementById('content').innerHTML = '<div class="loading"><div class="spinner"></div><div style="color:var(--text2);font-size:13px;">?? ' + date + ' ????...</div></div>';
+  let loaded = false;
+  for (let retry = 0; retry < 3 && !loaded; retry++) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 45000);
+      const resp = await fetch('/api/history?date=' + encodeURIComponent(date), { signal: controller.signal });
+      clearTimeout(timeout);
+      if (!resp.ok) throw new Error('????? ' + resp.status);
+      const r = await resp.json();
+      if (r && (r.success !== undefined || r.error !== undefined || r.stocks !== undefined)) {
+        r.is_historical = true;
+        renderResult(r);
+        document.getElementById('updateLabel').textContent = '??: ' + date;
+        loaded = true;
+      }
+    } catch(e) {
+      console.log('History retry '+(retry+1)+': '+e.message);
+      if (retry < 2) {
+        document.getElementById('content').innerHTML = '<div class="loading"><div class="spinner"></div><div style="color:var(--text2);font-size:13px;">??? ('+(retry+2)+'/3)...</div></div>';
+        await new Promise(r => setTimeout(r, 4000));
+      }
     }
-  } catch(e) {
-    document.getElementById('content').innerHTML = '<div class="empty"><div class="icon">⚠️</div><div class="title">加载失败</div><div class="desc">请检查日期是否正确</div></div>';
+  }
+  if (!loaded) {
+    document.getElementById('content').innerHTML = '<div class="empty"><div class="icon">??</div><div class="title">????</div><div class="desc">?????????????????</div></div>';
   }
 }
 

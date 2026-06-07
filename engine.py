@@ -712,6 +712,9 @@ def run_historical_screen(target_date):
             low = float(target_kl[4])
             vol = float(target_kl[5])
             amt = float(target_kl[6]) if len(target_kl) > 6 else 0
+            turnover_rate = float(target_kl[7]) if len(target_kl) > 7 and target_kl[7] else None
+            amp_pct = float(target_kl[8]) if len(target_kl) > 8 and target_kl[8] else None
+            pct_change_pct = float(target_kl[9]) if len(target_kl) > 9 and target_kl[9] else None
             
             prev_close = float(prev_kl[2])
             if close_p <= 0 or prev_close <= 0:
@@ -730,6 +733,7 @@ def run_historical_screen(target_date):
                 "volume": vol, "amount": amt,
                 "pct_change": round(pct, 2), "amplitude": round(amp, 2),
                 "volume_ratio": 1.0,
+                "turnover_rate": turnover_rate,
             }
         except:
             return None
@@ -795,7 +799,7 @@ def run_historical_screen(target_date):
             "amplitude": round(float(amp), 2),
             "volume": safe_float(str(row.get("volume", ""))),
             "amount": safe_float(str(row.get("amount", ""))),
-            "enhanced": {"turnover": None, "volume_ratio": row.get("volume_ratio"),
+            "enhanced": {"turnover": row.get("turnover_rate"), "volume_ratio": row.get("volume_ratio"),
                           "mktcap_yi": None, "total_mcap_yi": None, "pe": None,
                           "pb": None, "momentum": None, "bid_ask": None,
                           "chg_5d": None, "chg_ytd": None, "sector": None},
@@ -842,7 +846,7 @@ def is_market_open():
     return ((now.hour==9 and now.minute>=30) or (now.hour==10) or (now.hour==11 and now.minute<=30) or
             (now.hour==13) or (now.hour==14) or (now.hour==15 and now.minute==0))
 
-def run_screen():
+def run_screen(enable_sepa=True):
     t0 = time.time()
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Screen v3.1...")
     df = fetch_real_time_data()
