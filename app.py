@@ -2,6 +2,7 @@
 import json,sys,os,time,re,threading,math
 from datetime import datetime,timedelta
 from http.server import HTTPServer,BaseHTTPRequestHandler
+from socketserver import ThreadingMixIn
 from concurrent.futures import ThreadPoolExecutor,as_completed
 from urllib.parse import urlparse,parse_qs
 try:
@@ -24,24 +25,36 @@ def f(s):
     except: return 0.0
 
 def get_stocks():
+    """并发获取A股全市场股票列表(剔除ST/退市/创业板/科创板)"""
     if "stocks" in CACHE: return CACHE["stocks"]
-    all_stocks=[]
-    for p in range(1,70):
+    
+    def fetch_page(p):
         url=(f"http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
              f"Market_Center.getHQNodeData?page={p}&num=100&sort=symbol&asc=1"
              f"&node=hs_a&symbol=&_s_r_a=auto")
         try:
-            r=S.get(url,timeout=15); r.encoding="gb2312"
+            r=S.get(url,timeout=10); r.encoding="gb2312"
             data=json.loads(r.text)
-            if not data: break
+            if not data: return []
+            result=[]
             for x in data:
                 c,n=x.get("code",""),x.get("name","")
                 if c and n and all(k not in n.upper() for k in ["ST","\u9000"]) and not c.startswith(("300","301","688","689")):
-                    all_stocks.append((c,n))
-        except: break
+                    result.append((c,n))
+            return result
+        except: return None
+    
+    all_stocks=[]
+    with ThreadPoolExecutor(max_workers=15) as ex:
+        futs={ex.submit(fetch_page,p):p for p in range(1,70)}
+        for f in as_completed(futs):
+            data=f.result()
+            if data is None: continue
+            if not data: break
+            all_stocks.extend(data)
+    all_stocks.sort(key=lambda x:x[0])
     CACHE["stocks"]=all_stocks
     return all_stocks
-
 def get_quotes(codes):
     if not codes: return {}
     syms=[("sh" if c.startswith("6") else "sz")+c for c in codes]
@@ -377,8 +390,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei
 .status{text-align:center;padding:12px;color:var(--muted);font-size:12px}
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:6px}
 @keyframes spin{to{transform:rotate(360deg)}}
-.progress-bar{width:100%;height:3px;background:var(--border);border-radius:2px;margin-top:6px;overflow:hidden}
-.progress-bar div{height:100%;background:var(--accent);transition:width .3s}
+.status-text{font-size:13px;margin-bottom:2px}.stage-text{font-size:11px;color:var(--muted);margin-top:4px;animation:pulse 1.5s ease infinite}@keyframes pulse{0%,100%{opacity:.6}50%{opacity:1}}
+.progress-bar{width:100%;height:6px;background:#1a2332;border-radius:4px;margin-top:10px;overflow:hidden;box-shadow:inset 0 1px 3px rgba(0,0,0,.3)}
+.progress-bar div{height:100%;background:linear-gradient(90deg,#3b82f6,#a371f7);border-radius:4px;transition:width .4s ease;box-shadow:0 0 10px rgba(88,166,255,.3)}
 .card{background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px}
 .card-h{padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:600}
 .card-h span{color:var(--muted);font-weight:400}
@@ -423,8 +437,8 @@ tr:hover{background:#151c28}
 <div class="controls">
 <div class="field"><label>交易日期</label><input type="date" id="td" style="width:150px"></div>
 <div class="field"><label>评分门槛</label><select id="ms" style="width:130px"><option value="40">40 - 宽松</option><option value="50" selected>50 - 标准</option><option value="55">55 - 严格</option><option value="60">60 - 优质</option><option value="65">65 - 极品</option></select></div>
-<button class="btn" id="btn" onclick="scan()">开始扫描</button>
-<button class="btn-outline" onclick="setToday()">今日</button>
+<button class="btn" id="btn" onclick="scan()">🔍 开始扫描</button>
+<button class="btn-outline" onclick="setToday()">📌 今日</button>
 <span style="font-size:11px;color:var(--muted);margin-left:8px" id="tip"></span>
 </div>
 <div class="status" id="status"><span style="font-size:13px">点击「开始扫描」或「今日」| 实时约30秒 | 历史约1-2分钟</span></div>
@@ -449,17 +463,36 @@ var isToday=(td===getLatestTradeDay(new Date()));
 var b=document.getElementById("btn"),s=document.getElementById("status"),c=document.getElementById("card"),tip=document.getElementById("tip");
 b.disabled=true;b.textContent="扫描中...";c.style.display="none";tip.textContent="";
 var estTime=isToday?"约30秒":"约1-2分钟";
-s.innerHTML="<span class=\"spinner\"></span>正在扫描A股全市场... 预计"+estTime+"<div class=\"progress-bar\"><div id=\"pb\" style=\"width:0%\"></div></div><div id=\"pt\" style=\"font-size:10px;margin-top:4px;color:var(--muted)\">正在获取A股列表...</div>";
+s.innerHTML="<div class=\"status-text\"><span class=\"spinner\"></span>正在扫描A股全市场...</div><div class=\"stage-text\">预计"+estTime+" | 正在获取A股列表...</div><div class=\"progress-bar\"><div id=\"pb\" style=\"width:0%\"></div></div>";
 var url="/api/scan?min_score="+ms;if(!isToday){url+="&date="+td}
-var elapsed=0;var ptimer=setInterval(function(){elapsed+=0.3;var pct=Math.min(90,elapsed/(isToday?30:90)*100);var pb=document.getElementById("pb");if(pb)pb.style.width=pct+"%";var pt=document.getElementById("pt");if(pt){if(elapsed<3)pt.textContent="正在获取A股列表...";else if(elapsed<8)pt.textContent="正在拉取实时行情...";else if(elapsed<15)pt.textContent="正在逐只评分计算...";else if(elapsed<25)pt.textContent="正在排序筛选...";else pt.textContent="即将完成..."}},300);
+
+// Delay fetch slightly to let UI render
+await new Promise(function(r){setTimeout(r,150)});
+
+var elapsed=0;
+var stages=["正在获取A股列表...","正在拉取实时行情...","正在逐只评分计算...","正在排序筛选...","即将完成..."];
+var ptimer=setInterval(function(){
+elapsed+=0.3;
+var pct=Math.min(90,elapsed/(isToday?30:90)*100);
+var pb=document.getElementById("pb");if(pb)pb.style.width=pct+"%";
+var stageEl=document.querySelector(".stage-text");
+if(stageEl){
+var si=Math.min(stages.length-1,Math.floor(elapsed/(isToday?8:25)));
+stageEl.textContent="预计"+estTime+" | "+stages[si];
+}
+},300);
+
 try{
 var resp=await fetch(url,{signal:AbortSignal.timeout(180000)}),d=await resp.json();
-clearInterval(ptimer);var pb=document.getElementById("pb");if(pb)pb.style.width="100%";
-if(d.error){s.innerHTML="<span style=\"color:var(--red)\">错误: "+d.error+"</span>"}
-else if(d.count===0){s.innerHTML="<span style=\"color:var(--orange)\">无符合条件的标的，请降低评分门槛重试</span>"}
-else{s.innerHTML="<span style=\"color:var(--green)\">扫描完成，共发现 "+d.count+" 只标的</span>";render(d)}
-tip.textContent="耗时 "+(d.elapsed||0)+"秒 | "+d.mode}catch(e){clearInterval(ptimer);s.innerHTML="<span style=\"color:var(--red)\">连接失败: "+e.message+"</span>";tip.textContent=""}
-b.disabled=false;b.textContent="开始扫描"}
+clearInterval(ptimer);
+var pb=document.getElementById("pb");if(pb)pb.style.width="100%";
+if(d.error){s.innerHTML="<span style=\"color:var(--red)\">\u26a0\ufe0f 错误: "+d.error+"</span>"}
+else if(d.count===0){s.innerHTML="<span style=\"color:var(--orange)\">\u{1f614} 无符合条件的标的，请降低评分门槛重试</span>"}
+else{s.innerHTML="<span style=\"color:var(--green)\">\u2705 扫描完成，共发现 "+d.count+" 只标的</span>";render(d)}
+tip.textContent="\u23f1 耗时 "+(d.elapsed||0)+"秒 | "+d.mode}catch(e){
+clearInterval(ptimer);
+s.innerHTML="<span style=\"color:var(--red)\">\u274c 连接失败: "+e.message+"</span>";tip.textContent=""}
+b.disabled=false;b.textContent="\u{1f50d} 开始扫描"}
 document.getElementById("rc").textContent=d.count+" 只 | 耗时"+d.elapsed+"秒";
 var h="";
 d.results.forEach(function(x,i){
@@ -525,6 +558,9 @@ document.addEventListener("keydown",function(e){if(e.key==="Escape"){document.ge
 </html>
 '''
 
+class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
+    daemon_threads = True
+
 class H(BaseHTTPRequestHandler):
     def log_message(self,*a): pass
     def _s(self,b,ct="text/html; charset=utf-8",code=200):
@@ -570,7 +606,7 @@ if __name__=="__main__":
         print(f"  Tail-Stock Screener v5")
         print(f"  7-Dim AI Scoring | http://localhost:{port}")
         print("="*55 + "\n")
-        HTTPServer(("0.0.0.0",port),H).serve_forever()
+        ThreadingHTTPServer(("0.0.0.0",port),H).serve_forever()
     else:
         t0=time.time()
         print("\n" + "="*55)
