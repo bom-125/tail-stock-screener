@@ -1,10 +1,10 @@
-﻿<!DOCTYPE html>
+﻿﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>尾盘选股器 v5.5</title>
+<title>尾盘选股器 V8i</title>
 <style>
 :root{--bg:#060912;--card:#0d1117;--card2:#131820;--border:#1a2332;--text:#c9d1d9;--muted:#6e7681;--accent:#58a6ff;--green:#3fb950;--red:#f85149;--orange:#d29922;--gold:#e3b341;--purple:#a371f7}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -61,26 +61,62 @@ tr:hover{background:#151c28}
 #loader-bar{height:100%;width:0%;background:linear-gradient(90deg,#3b82f6,#a371f7);border-radius:5px;transition:width .3s ease}
 
 @media(max-width:768px){.banner{grid-template-columns:1fr}.controls{flex-direction:column;align-items:stretch}}
+
+.holdings-panel{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 20px;margin-bottom:10px}
+.holdings-panel h3{font-size:14px;margin-bottom:10px;color:var(--accent)}
+.holdings-form{display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-bottom:12px}
+.holdings-form input{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:12px;width:90px;font-family:inherit}
+.holdings-form input:focus{border-color:var(--accent);outline:none}
+.holdings-form .btn-sm{font-size:11px;padding:6px 14px}
+.holdings-table{width:100%;border-collapse:collapse;font-size:11px;display:none}
+.holdings-table th{font-size:10px;padding:6px 8px}
+.holdings-table td{padding:6px 8px;font-size:11px}
+.holdings-table .advice-badge{padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700}
+.ab-sell{background:#2d1515;color:#f85149}.ab-reduce{background:#2d2010;color:#d29922}
+.ab-hold{background:#10202d;color:#58a6ff}.ab-add{background:#152d15;color:#3fb950}
+.holdings-summary{font-size:12px;margin-top:8px;padding:8px 12px;background:var(--card2);border-radius:6px;display:none}
+.btn-xs{background:var(--bg);border:1px solid var(--border);color:var(--muted);padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;font-family:inherit;margin-left:4px}
+.btn-xs:hover{color:var(--red);border-color:var(--red)}
+
 </style>
 </head>
 <body>
 <div class="container">
 
 <div class="header">
-<h1>尾盘选股器 v5.5</h1>
+<h1>尾盘选股器 V8i</h1>
 <p class="sub">7维AI评分 | 14:30-15:00 T+1短线套利 | A股主板</p>
 </div>
 
 <div class="banner">
-<div><b>评分维度：</b> <span class="hl">价格形态</span> | <span class="hl">量能活跃</span> | <span class="hl">趋势均线</span> | <span class="hl">K线形态</span></div>
-<div><b>优选条件：</b>涨幅3%-5% | 振幅5%以内 | 多头排列 | 换手5%-10% | 市值50-200亿</div>
-<div><b>风控排除：</b> <span class="dg">ST/退市/创业/科创</span> | <span class="dg">长上影出货</span> | <span class="dg">无量空涨</span></div>
-<div><b>加分项：</b>涨停基因 | 低位启动 | 放量上涨 | 独立抗跌</div>
+<div><b>V8i策略：</b> <span class="hl">RSI动量</span> | <span class="hl">ADX趋势</span> | <span class="hl">MFI资金</span> | <span class="hl">MACD金叉</span> | <span class="hl">布林带</span></div>
+<div><b>V8i指标：</b>RSI 45-72 | ADX>20 | MFI>50 | BB% 0.6-0.9 | MACD金叉 | 低位启动</div>
+<div><b>风控排除：</b> <span class="dg">ST/退市/创业/科创</span> | <span class="dg">RSI超72</span> | <span class="dg">成交额<5千万</span> | <span class="dg">涨幅<1%或>5.5%</span></div>
+<div><b>操作建议：</b><span style="color:#ff6b6b">强烈买入(100%仓)</span> | <span style="color:#ff922b">买入(90%)</span> | <span style="color:#e3b341">谨慎买入(60%)</span> | <span style="color:#6e7681">观望/跳过</span></div>
+</div>
+
+
+<div class="holdings-panel" id="holdings-panel">
+<h3>📊 我的持仓 <span style="color:var(--muted);font-weight:400;font-size:11px">| 编辑修改</span></h3>
+<div class="holdings-form">
+  <input type="text" id="h-code" placeholder="代码 如600000" maxlength="6">
+  <input type="text" id="h-name" placeholder="名称(选填)">
+  <input type="number" id="h-price" placeholder="买入价" step="0.01">
+  <input type="number" id="h-shares" placeholder="股数" step="100" min="100">
+  <input type="date" id="h-date" style="width:110px">
+  <button class="btn btn-sm" onclick="addHolding()">+ 添加</button>
+  <button class="btn-outline btn-sm" onclick="analyzeHoldings()">🔍 分析持仓</button>
+</div>
+<table class="holdings-table" id="holdings-table">
+<thead><tr><th>代码</th><th>名称</th><th>买入价</th><th>股数</th><th>现价</th><th>盈亏%</th><th>盈亏额</th><th>市值</th><th>RSI</th><th>止盈价</th><th>止损价</th><th>仓位%</th><th>建议</th><th>卖出信号</th><th></th></tr></thead>
+<tbody id="holdings-tbody"></tbody>
+</table>
+<div class="holdings-summary" id="holdings-summary"></div>
 </div>
 
 <div class="controls">
 <div class="field"><label>交易日期</label><input type="date" id="td" style="width:150px"></div>
-<div class="field"><label>评分门槛</label><select id="ms" style="width:130px"><option value="40">40 - 宽松</option><option value="50" selected>50 - 标准</option><option value="55">55 - 严格</option><option value="60">60 - 优质</option><option value="65">65 - 极品</option></select></div>
+<div class="field"><label>评分门槛</label><select id="ms" style="width:130px"><option value="20">20 - 历史宽松</option><option value="30">30 - 历史标准</option><option value="40" selected>40 - 实时标准</option><option value="50">50 - 严格</option><option value="60">60 - 优质</option></select></div>
 <button class="btn" id="btn" onclick="startScan()">开始扫描</button>
 <button class="btn-outline" onclick="setToday()">今日</button>
 <button class="btn-outline" onclick="testLoader()" style="font-size:11px">测试进度条</button>
@@ -91,7 +127,7 @@ tr:hover{background:#151c28}
 
 <div class="card" id="card">
 <div class="card-h"><b id="rd"></b><span id="rc"></span></div>
-<div class="table-wrap"><table><thead><tr><th>#</th><th>代码</th><th>名称</th><th>综合分</th><th>现价</th><th>涨幅</th><th>振幅</th><th>成交额</th><th>换手</th><th>市值</th><th>趋势</th><th>操作建议</th><th>详情</th></tr></thead><tbody id="tb"></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>#</th><th>代码</th><th>名称</th><th>综合分</th><th>现价</th><th>涨幅</th><th>振幅</th><th>成交额</th><th>换手</th><th>市值</th><th>趋势</th><th>市场</th><th>止盈价</th><th>止损价</th><th>仓位%</th><th>操作建议</th><th>详情</th></tr></thead><tbody id="tb"></tbody></table></div>
 </div>
 
 </div>
@@ -192,7 +228,7 @@ function renderTable(d){
   for(var i=0;i<d.results.length;i++){
     var x=d.results[i],dt=x.details||{},sc=x.score;
     var scClass=sc>=80?"s-A":sc>=70?"s-B":sc>=60?"s-C":sc>=50?"s-D":"s-E";
-    var label=sc>=80?"强烈推荐":sc>=70?"推荐关注":sc>=60?"适当关注":sc>=50?"一般关注":"观望";
+    var label=sc>=80?"强烈买入":sc>=70?"买入":sc>=60?"谨慎买入":sc>=50?"轻仓关注":"观望";
     var lc=sc>=80?"bg-A":sc>=70?"bg-B":sc>=60?"bg-C":sc>=50?"bg-D":"bg-E";
     var chg=x.change_pct||0;
     var chgStr=(chg>=0?"+":"")+chg.toFixed(2)+"%";
@@ -208,7 +244,14 @@ function renderTable(d){
     h+="<td>"+((x.amount||0)/1e8).toFixed(1)+"亿</td>";
     h+="<td>"+(x.turnover||0).toFixed(1)+"%</td>";
     h+="<td>"+(dt["mkt_cap_yi"]||"--")+"</td>";
-    h+="<td style='font-size:11px'>"+(dt["ma_arrange"]||"--")+"</td>";
+    h+="<td style='font-size:11px'>"+(dt["trend"]||dt["ma_arrange"]||"--")+"</td>";
+    var mkt=dt["market_label"]||dt["market"]||"--";
+    var mktColor=mkt=="BULLISH+"?"var(--green)":mkt=="BULLISH"?"var(--accent)":mkt=="SIDEWAYS"?"var(--orange)":"var(--muted)";
+    h+="<td style='color:"+mktColor+";font-size:10px;font-weight:600'>"+mkt+"</td>";
+    var tp=dt["tp_price"];var sl=dt["sl_price"];
+    h+="<td style='color:var(--green)'>"+(tp?tp.toFixed(2):"--")+"</td>";
+    h+="<td style='color:var(--red)'>"+(sl?sl.toFixed(2):"--")+"</td>";
+    h+="<td style='font-weight:600'>"+(dt["position_pct"]||"--")+"%</td>";
     h+="<td><span class='badge "+lc+"'>"+label+"</span></td>";
     h+="<td><button class='detail-btn' onclick='showDetail("+i+")'>+</button></td></tr>";
   }
@@ -225,36 +268,133 @@ function showDetail(i){
   rows.push(["现价",(x.price||0).toFixed(2)+"元"]);
   rows.push(["涨幅",(x.change_pct||0).toFixed(2)+"%"]);
   rows.push(["振幅",(dt["amp"]||0).toFixed(1)+"%"]);
-  rows.push(["价格评价",dt["price_eval"]||"--"]);
-  rows.push(["振幅评价",dt["amp_eval"]||"--"]);
-  rows.push(["换手评价",dt["to_eval"]||"--"]);
-  rows.push(["量能评价",dt["amt_eval"]||"--"]);
-  rows.push(["量能趋势",dt["vol_trend_eval"]||"--"]);
-  rows.push(["K线实体",dt["body_eval"]||"--"]);
-  rows.push(["上影线",dt["shadow_eval"]||"--"]);
-  rows.push(["收盘位置",dt["close_eval"]||"--"]);
+  rows.push(["--- 技术指标 ---",""]);
+  rows.push(["RSI(6)",(dt["rsi"]||"--")]);
+  rows.push(["量比",(dt["vol_ratio"]||"--")]);
+  rows.push(["5日动量",(dt["mom5"]||0).toFixed(1)+"%"]);
+  rows.push(["距20日高点",(dt["dist_high"]||0).toFixed(1)+"%"]);
   rows.push(["均线排列",dt["ma_arrange"]||"--"]);
-  rows.push(["均线方向",dt["ma_dir"]||"--"]);
-  rows.push(["均线发散",dt["ma_spread"]||"--"]);
-  rows.push(["流通市值",dt["mkt_cap_yi"]||"--"]);
-  rows.push(["市值评价",dt["mkt_eval"]||"--"]);
+  rows.push(["MA5/MA10/MA20",(dt["ma5"]||0).toFixed(2)+"/"+(dt["ma10"]||0).toFixed(2)+"/"+(dt["ma20"]||0).toFixed(2)]);
   rows.push(["涨停基因",dt["limit_gene"]||"--"]);
-  rows.push(["52周位置",dt["pos_52w"]||"--"]);
-  rows.push(["低位启动",dt["low_start"]||"--"]);
-  rows.push(["价量配合",dt["vol_price"]||"--"]);
-  rows.push(["风险提示",dt["risk"]||"--"]);
+  rows.push(["量能趋势",(dt["vol_trend"]||0).toFixed(1)+"%"]);
+  rows.push(["趋势信号",dt["trend"]||"--"]);
+  rows.push(["趋势强度",dt["trend_conf"]||"--"]);
+  rows.push(["--- 操作建议 ---",""]);
+  rows.push(["市场状态",dt["market_label"]||dt["market"]||"--"]);
+  rows.push(["止盈价",(dt["tp_price"]||0).toFixed(2)+" (+"+(dt["tp_pct"]||0)+"%)"]);
+  rows.push(["止损价",(dt["sl_price"]||0).toFixed(2)+" ("+(dt["sl_pct"]||0)+"%)"]);
+  rows.push(["建议仓位",(dt["position_pct"]||"--")+"%"]);
+  rows.push(["建议持有",(dt["max_hold"]||"--")+"天"]);
+  rows.push(["ATR波动",(dt["atr_pct"]||"--")+"%"]);
   var rh="";
   for(var j=0;j<rows.length;j++){
     rh+='<div class="row"><span class="label">'+rows[j][0]+'</span><span class="val">'+rows[j][1]+'</span></div>';
   }
   var content=document.getElementById("modal-content");
-  content.innerHTML='<button class="close" onclick="closeModal()">&times;</button><h3>'+x.code+' '+x.name+'</h3>'+rh+'<div class="advice-box"><b>操作建议：</b><br>'+dt["advice_detail"]+'</div>';
+  var advice_text = dt["timing_reason"] || dt["advice_detail"] || "暂无详细建议";
+  content.innerHTML='<button class="close" onclick="closeModal()">&times;</button><h3>'+x.code+' '+x.name+'</h3>'+rh+'<div class="advice-box"><b>操作建议：</b><br>'+advice_text+'</div>';
   document.getElementById("modal-overlay").classList.add("active");
 }
 
 function closeModal(){document.getElementById("modal-overlay").classList.remove("active")}
 function closeModalClick(e){if(e.target===document.getElementById("modal-overlay"))closeModal()}
 document.addEventListener("keydown",function(e){if(e.key==="Escape")closeModal()});
+
+var _holdings=[];
+
+function loadHoldings(){
+  var xhr=new XMLHttpRequest();
+  xhr.open("GET","/api/holdings",true);
+  xhr.onload=function(){
+    try{_holdings=JSON.parse(xhr.responseText);renderHoldings()}catch(e){}
+  };
+  xhr.send();
+}
+
+function addHolding(){
+  var code=document.getElementById("h-code").value.trim();
+  var name=document.getElementById("h-name").value.trim()||code;
+  var price=parseFloat(document.getElementById("h-price").value);
+  var shares=parseInt(document.getElementById("h-shares").value);
+  var date=document.getElementById("h-date").value;
+  if(!code||!price||!shares){alert("\u8bf7\u586b\u5199\u4ee3\u7801/\u4e70\u5165\u4ef7/\u80a1\u6570");return}
+  var xhr=new XMLHttpRequest();
+  xhr.open("POST","/api/holdings",true);
+  xhr.setRequestHeader("Content-Type","application/json");
+  xhr.onload=function(){
+    try{var r=JSON.parse(xhr.responseText);if(r.ok){loadHoldings();document.getElementById("h-code").value="";document.getElementById("h-price").value="";document.getElementById("h-shares").value=""}}catch(e){}
+  };
+  xhr.send(JSON.stringify({code:code,name:name,buy_price:price,shares:shares,buy_date:date}));
+}
+
+function removeHolding(code){
+  if(!confirm("\u5220\u9664\u6301\u4ed3 "+code+" ?"))return;
+  var xhr=new XMLHttpRequest();
+  xhr.open("DELETE","/api/holdings?code="+code,true);
+  xhr.onload=function(){loadHoldings()};
+  xhr.send();
+}
+
+function renderHoldings(data){
+  var tbl=document.getElementById("holdings-table");
+  var tbody=document.getElementById("holdings-tbody");
+  var sum=document.getElementById("holdings-summary");
+  var hdata=data||_holdings;
+  if(!hdata||!hdata.length){
+    tbody.innerHTML='<tr><td colspan="12" style="text-align:center;color:var(--muted);padding:20px">暂无持仓，添加股票开始分析</td></tr>';
+    tbl.style.display="table";sum.style.display="none";return
+  }
+  tbl.style.display="table";sum.style.display="block";
+  var html="";var totalPnl=0;var totalCost=0;
+  for(var i=0;i<hdata.length;i++){
+    var h=hdata[i];
+    var pnl=h.pnl_pct||0;var pnlAmt=h.pnl_amt||0;
+    var pnlColor=pnl>=0?"var(--green)":"var(--red)";
+    var advice=h.advice||"--";var advClass="ab-hold";
+    if(advice.indexOf("\u6b62\u76c8")>=0||advice.indexOf("\u6b62\u635f")>=0)advClass="ab-sell";
+    else if(advice.indexOf("\u51cf")>=0)advClass="ab-reduce";
+    else if(advice.indexOf("\u52a0")>=0)advClass="ab-add";
+    html+="<tr><td style='color:var(--accent);font-weight:600'>"+h.code+"</td>";
+    html+="<td>"+(h.name||"--")+"</td>";
+    html+="<td>"+(h.buy_price||0).toFixed(2)+"</td>";
+    html+="<td>"+(h.shares||0)+"</td>";
+    html+="<td>"+((h.cur_price||0).toFixed(2))+"</td>";
+    html+="<td style='color:"+pnlColor+";font-weight:600'>"+(pnl>=0?"+":"")+pnl.toFixed(2)+"%</td>";
+    html+="<td style='color:"+pnlColor+"'>"+(pnlAmt>=0?"+":"")+pnlAmt.toFixed(0)+"</td>";
+    html+="<td>"+((h.market_value||0).toFixed(0))+"</td>";
+    html+="<td>"+(h.rsi||"--")+"</td>";
+    html+="<td><span class='advice-badge "+advClass+"'>"+advice+"</span></td>";
+    html+="<td><button class='btn-xs' onclick='removeHolding(\"+h.code+\")'>x</button></td></tr>";
+    totalPnl+=pnlAmt||0;totalCost+=(h.cost||h.buy_price*h.shares||0);
+  }
+  tbody.innerHTML=html;
+  var tpColor=totalPnl>=0?"var(--green)":"var(--red)";
+  sum.innerHTML="\u603b\u6295\u5165 "+totalCost.toFixed(0)+" | \u603b\u76c8\u4e8f <b style='color:"+tpColor+"'>"+(totalPnl>=0?"+":"")+totalPnl.toFixed(0)+"</b> | \u6536\u76ca\u7387 <b style='color:"+tpColor+"'>"+(totalCost>0?(totalPnl/totalCost*100).toFixed(1):"0")+"%</b>";
+}
+
+function analyzeHoldings(){
+  var btn=event.target;btn.disabled=true;btn.textContent="\u5206\u6790\u4e2d...";
+  var xhr=new XMLHttpRequest();
+  xhr.open("GET","/api/holdings/analyze",true);
+  xhr.timeout=60000;
+  xhr.onload=function(){
+    btn.disabled=false;btn.textContent="\ud83d\udd0d \u5206\u6790\u6301\u4ed3";
+    try{
+      var d=JSON.parse(xhr.responseText);
+      renderHoldings(d.holdings);
+      var sum=document.getElementById("holdings-summary");
+      sum.style.display="block";
+      var tp=d.total_pnl||0;var tv=d.total_value||0;
+      var tc=tp>=0?"var(--green)":"var(--red)";
+      sum.innerHTML+="  | \u603b\u5e02\u503c <b>"+tv.toFixed(0)+"</b> <span style='color:"+tc+"'>("+(tp>=0?"+":"")+tp.toFixed(0)+")</span>";
+    }catch(e){}
+  };
+  xhr.onerror=function(){btn.disabled=false;btn.textContent="\ud83d\udd0d \u5206\u6790\u6301\u4ed3"};
+  xhr.send();
+}
+
+loadHoldings();
+
 </script>
 </body>
 </html>

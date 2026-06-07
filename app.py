@@ -17,7 +17,8 @@ def new_session():
     return s
 
 S=new_session()
-CACHE={}
+CACHE={}; STOCK_CACHE_FILE=os.path.join(os.path.dirname(os.path.abspath(__file__)),"stocks_cache.json")
+KLINES_CACHE_FILE=os.path.join(os.path.dirname(os.path.abspath(__file__)),"klines_cache.json")
 PROGRESS={"total":0,"done":0,"msg":""}
 
 def f(s):
@@ -27,6 +28,15 @@ def f(s):
 def get_stocks():
     """并发获取A股全市场股票列表(剔除ST/退市/创业板/科创板)"""
     if "stocks" in CACHE: return CACHE["stocks"]
+    
+    # Try disk cache first
+    try:
+        with open(STOCK_CACHE_FILE,"r",encoding="utf-8") as fc:
+            cached=json.load(fc)
+            if cached and len(cached)>1000:
+                CACHE["stocks"]=cached
+                return cached
+    except: pass
     
     def fetch_page(p):
         url=(f"http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
@@ -45,15 +55,19 @@ def get_stocks():
         except: return None
     
     all_stocks=[]
-    with ThreadPoolExecutor(max_workers=15) as ex:
-        futs={ex.submit(fetch_page,p):p for p in range(1,70)}
+    with ThreadPoolExecutor(max_workers=20) as ex:
+        futs={ex.submit(fetch_page,p):p for p in range(1,80)}
         for f in as_completed(futs):
             data=f.result()
             if data is None: continue
-            if not data: break
+            if not data: continue
             all_stocks.extend(data)
     all_stocks.sort(key=lambda x:x[0])
     CACHE["stocks"]=all_stocks
+    try:
+        with open(STOCK_CACHE_FILE,"w",encoding="utf-8") as fc:
+            json.dump(all_stocks,fc,ensure_ascii=False)
+    except: pass
     return all_stocks
 def get_quotes(codes):
     if not codes: return {}
@@ -94,8 +108,21 @@ def fetch_kline_sina(symbol, datalen=30):
         return []
     except: return []
 
-def get_historical_data(codes, target_date, datalen=30):
+def get_historical_data(codes, target_date, datalen=80):
+    """获取历史K线数据（带磁盘缓存）"""
     results={}
+    
+    # Try disk cache
+    cache_key = target_date + "_" + str(datalen)
+    try:
+        with open(KLINES_CACHE_FILE,"r",encoding="utf-8") as fc:
+            all_cached=json.load(fc)
+            cached=all_cached.get(cache_key)
+            if cached and len(cached)>500:
+                PROGRESS["total"]=len(codes); PROGRESS["done"]=len(codes)
+                PROGRESS["msg"]=f"Loaded {len(cached)} from cache"
+                return cached
+    except: pass
     total=len(codes)
     PROGRESS["total"]=total; PROGRESS["done"]=0
     PROGRESS["msg"]=f"Getting {total} stocks..."
@@ -112,6 +139,17 @@ def get_historical_data(codes, target_date, datalen=30):
             if (i+1)%500==0:
                 PROGRESS["msg"]=f"Got {i+1}/{total}..."
     PROGRESS["msg"]=f"Done {len(results)}/{total}"
+    # Save to disk cache
+    try:
+        all_cached={}
+        try:
+            with open(KLINES_CACHE_FILE,"r",encoding="utf-8") as fc:
+                all_cached=json.load(fc)
+        except: pass
+        all_cached[cache_key]=results
+        with open(KLINES_CACHE_FILE,"w",encoding="utf-8") as fc:
+            json.dump(all_cached,fc,ensure_ascii=False)
+    except: pass
     return results
 
 def extract_date_data(kline_data, target_date):
@@ -169,7 +207,7 @@ def extract_date_data(kline_data, target_date):
             first_half=sum(recent_vols[:half])/half if half>0 else 0
             second_half=sum(recent_vols[half:])/(len(recent_vols)-half) if len(recent_vols)-half>0 else 0
             if first_half>0: vol_trend=(second_half-first_half)/first_half*100
-    return {"open":today["open"],"close":today["close"],"high":today["high"],"low":today["low"],"volume":today["volume"],"prev_close":prev_close,"ma5":ma5,"ma10":ma10,"ma20":ma20,"ma60":ma60,"ma5_slope":calc_ma_slope(5),"ma10_slope":calc_ma_slope(10),"ma20_slope":calc_ma_slope(20),"amp":amp,"body_ratio":body_ratio,"upper_shadow":upper_shadow,"close_position":close_position,"recent_limit_up":recent_limit_up,"vol_trend":vol_trend,"date":today["day"]}
+    return {"_idx": idx, "open":today["open"],"close":today["close"],"high":today["high"],"low":today["low"],"volume":today["volume"],"prev_close":prev_close,"ma5":ma5,"ma10":ma10,"ma20":ma20,"ma60":ma60,"ma5_slope":calc_ma_slope(5),"ma10_slope":calc_ma_slope(10),"ma20_slope":calc_ma_slope(20),"amp":amp,"body_ratio":body_ratio,"upper_shadow":upper_shadow,"close_position":close_position,"recent_limit_up":recent_limit_up,"vol_trend":vol_trend,"date":today["day"]}
 
 # ============ 7-Dimension Scoring ============
 def score_v5(data):
@@ -322,35 +360,855 @@ def score_v5(data):
     else: dt["advice"]="回避"; dt["advice_detail"]="综合评分过低，风险大于机会，坚决回避。"; dt["grade"]="F"
     return total,dt
 
+
+# ---- V8i PROFESSIONAL LIVE SCORING ----
+def calc_adx_live(highs, lows, closes, period=14):
+    n = len(closes)
+    if n < period + 1: return 0, 0, 0
+    tr_list = []; plus_dm = []; minus_dm = []
+    for i in range(1, n):
+        h, l, c = highs[i], lows[i], closes[i]
+        ph, pl = highs[i-1], lows[i-1]
+        tr = max(h-l, abs(h-ph), abs(l-pl))
+        tr_list.append(tr)
+        updm = h - ph if (h - ph) > (pl - l) and (h - ph) > 0 else 0
+        dndm = pl - l if (pl - l) > (h - ph) and (pl - l) > 0 else 0
+        plus_dm.append(updm); minus_dm.append(dndm)
+    atr = sum(tr_list[:period]) / period
+    atr_pdm = sum(plus_dm[:period]) / period
+    atr_ndm = sum(minus_dm[:period]) / period
+    alpha = 1.0 / period
+    for i in range(period, len(tr_list)):
+        atr = atr * (1-alpha) + tr_list[i] * alpha
+        atr_pdm = atr_pdm * (1-alpha) + plus_dm[i] * alpha
+        atr_ndm = atr_ndm * (1-alpha) + minus_dm[i] * alpha
+    pdi = 100 * atr_pdm / atr if atr > 0 else 0
+    ndi = 100 * atr_ndm / atr if atr > 0 else 0
+    dx_list = []
+    atr2 = sum(tr_list[:period]) / period; atr_pdm2 = sum(plus_dm[:period]) / period; atr_ndm2 = sum(minus_dm[:period]) / period
+    for i in range(period, len(tr_list)):
+        atr2 = atr2 * (1-alpha) + tr_list[i] * alpha
+        atr_pdm2 = atr_pdm2 * (1-alpha) + plus_dm[i] * alpha
+        atr_ndm2 = atr_ndm2 * (1-alpha) + minus_dm[i] * alpha
+        pdi2 = 100 * atr_pdm2 / atr2 if atr2 > 0 else 0
+        ndi2 = 100 * atr_ndm2 / atr2 if atr2 > 0 else 0
+        dx2 = 100 * abs(pdi2 - ndi2) / (pdi2 + ndi2) if (pdi2 + ndi2) > 0 else 0
+        dx_list.append(dx2)
+    if dx_list:
+        adx_val = sum(dx_list[:period]) / period
+        for i in range(period, len(dx_list)):
+            adx_val = adx_val * (1-alpha) + dx_list[i] * alpha
+        return round(adx_val, 1), round(pdi, 1), round(ndi, 1)
+    return 0, round(pdi, 1), round(ndi, 1)
+
+def score_v8i(quote, kls, market_idx_kls=None):
+    """V8i scoring matching sim_v8i.py strategy (+27.5% returns).
+    Returns (score, details_dict, timing_advice)"""
+    p = f(quote.get("price", 0))
+    o = f(quote.get("open", 0)); h = f(quote.get("high", 0)); l = f(quote.get("low", 0))
+    yc = f(quote.get("yclose", 0))
+    amt = f(quote.get("amt", 0))
+    if p <= 0 or yc <= 0: return 0, {"filter": "无效数据"}, "跳过"
+    
+    chg = (p - yc) / yc * 100
+    amp = (h - l) / yc * 100 if h and l and yc else 0
+    rng = h - l if h and l else 0
+    cp = (p - l) / rng if rng > 0 else 1
+    
+    # ---- Basic hard filters ----
+    if chg < 1.0 or chg > 5.5: return 0, {"filter": "涨幅%.1f%%超标(1-5.5%%)"%chg, "chg": round(chg,2)}, "跳过"
+    if amp > 6.0: return 0, {"filter": "振幅%.1f%%超标"%amp, "amp": round(amp,2)}, "跳过"
+    if cp < 0.55: return 0, {"filter": "收盘位置低"}, "跳过"
+    if p < 4 or p > 80: return 0, {"filter": "价格超出范围"}, "跳过"
+    if amt < 50000000: return 0, {"filter": "成交额%.0f万过低"%(amt/1e4)}, "跳过"
+    
+    if not kls or len(kls) < 25:
+        score = 35
+        if 2.5 <= chg <= 4.5: score += 10
+        if amp <= 3: score += 5
+        if cp >= 0.85: score += 5
+        final_s = min(100, score)
+        timing_s = "强势" if chg >= 2.5 else "观望"
+        tp_s = round(p * 1.05, 2); sl_s = round(p * 0.96, 2)
+        return final_s, {"chg": round(chg,2), "amp": round(amp,2), "mode": "simplified",
+            "tp_price": tp_s, "sl_price": sl_s, "tp_pct": 5.0, "sl_pct": -4.0,
+            "max_hold": 3, "position_pct": 50, "market_label": "UNKNOWN",
+            "total": final_s}, timing_s
+    
+    # ---- Extract kline data ----
+    ki = len(kls) - 1
+    closes = [k["close"] for k in kls[max(0, ki-29):ki+1]]
+    highs_list = [k["high"] for k in kls[max(0, ki-29):ki+1]]
+    lows_list = [k["low"] for k in kls[max(0, ki-29):ki+1]]
+    vols_list = [k["volume"] for k in kls[max(0, ki-29):ki+1]]
+    
+    if len(closes) < 20:
+        return 35, {"chg": round(chg,2), "note": "5日K线不足"}, "观望"
+    
+    closes_all = closes + [p]
+    highs_all = highs_list + [h]
+    lows_all = lows_list + [l]
+    
+    score = 0; details = {}
+    details["chg"] = round(chg, 2); details["amp"] = round(amp, 2)
+    
+    # ---- RSI(6) ----
+    gains = []; losses_rsi = []
+    for i in range(1, min(7, len(closes_all))):
+        diff = closes_all[-i] - closes_all[-i-1]
+        if diff >= 0: gains.append(diff)
+        else: losses_rsi.append(abs(diff))
+    avg_gain = sum(gains)/6 if gains else 0.0001
+    avg_loss = sum(losses_rsi)/6 if losses_rsi else 0.0001
+    rsi6 = 100 - (100 / (1 + avg_gain/avg_loss)) if avg_loss > 0 else 100
+    details["rsi"] = round(rsi6, 0)
+    
+    if rsi6 > 72: return 0, {"filter": "RSI%d过热"%int(rsi6)}, "跳过"
+    if rsi6 < 45: return 0, {"filter": "RSI%d过弱"%int(rsi6)}, "跳过"
+    
+    if 55 <= rsi6 <= 65: score += 8
+    elif 50 <= rsi6 <= 70: score += 5
+    else: score += 2
+    
+    # ---- Volume ratio ----
+    avg_vol5 = sum(vols_list[-6:-1])/5 if len(vols_list) >= 6 else vols_list[-1]
+    vol_ratio = vols_list[-1]/avg_vol5 if avg_vol5 > 0 else 1
+    details["vol_ratio"] = round(vol_ratio, 1)
+    # ---- IMPROVED FILTERS (from sim_v8i.py) ----
+    if vol_ratio < 1.0 or vol_ratio > 4.0: return 0, {"filter": "量比%.1f超标" % vol_ratio, "vol_ratio": round(vol_ratio,1)}, "跳过"
+    if 1.3 <= vol_ratio <= 2.5: score += 7
+    elif 1.0 <= vol_ratio <= 3.0: score += 4
+    else: score += 1
+    
+    # ---- Green days (match sim_v8i: close >= open) ----
+    green_days = 0
+    for i in range(ki, max(-1, ki-3), -1):
+        if i >= 0 and kls[i]["close"] >= kls[i]["open"]:
+            green_days += 1
+        else: break
+    if ki > 0 and kls[ki]["close"] < kls[ki]["open"]:
+        green_days = 0
+    if green_days < 1: return 0, {"filter": "无阳线"}, "跳过"
+    score += min(green_days, 3)
+    
+    # ---- Dist from 20d high ----
+    if len(highs_list) >= 20:
+        high20 = max(highs_list[-20:])
+        dist_high = (p - high20) / high20 * 100 if high20 > 0 else 0
+        details["dist_high"] = round(dist_high, 1)
+        if dist_high < -8: return 0, {"filter": "距高点%.1f%%过远" % dist_high, "dist_high": round(dist_high,1)}, "跳过"
+        if dist_high >= -1: score += 5
+        elif dist_high >= -3: score += 3
+        elif dist_high >= -5: score += 1
+    
+    # ---- MA calculations ----
+    ma5 = sum(closes_all[-5:])/5; ma10 = sum(closes_all[-10:])/10; ma20 = sum(closes_all[-20:])/20
+    details["ma5"] = round(ma5, 2); details["ma10"] = round(ma10, 2); details["ma20"] = round(ma20, 2)
+    
+    if p > ma20: score += 4
+    
+    if ma5 > ma10 > ma20: score += 4
+    elif ma5 > ma10: score += 2
+    
+    details["ma_arrange"] = "多头排列" if ma5 > ma10 > ma20 else ("偏多" if ma5 > ma10 else "偏空")
+    
+    # ---- Change quality ----
+    if 2.5 <= chg <= 4.5: score += 5
+    elif 1.5 <= chg <= 5: score += 3
+    
+    # ---- Amplitude ----
+    if amp <= 3: score += 3
+    elif amp <= 4: score += 1
+    
+    # ---- Recent limit-up ----
+    recent_limit = False
+    for j in range(max(0, ki-20), ki):
+        if j > 0:
+            prev_c = kls[j-1]["close"]
+            cur_c = kls[j]["close"]
+            if prev_c > 0 and (cur_c - prev_c)/prev_c >= 0.095:
+                recent_limit = True; break
+    if recent_limit: score += 3
+    details["limit_gene"] = "有" if recent_limit else "无"
+    
+    # ---- Turnover scale ----
+    amt_yi = amt / 1e8
+    if amt_yi >= 5: score += 3
+    elif amt_yi >= 1: score += 1
+    
+    # ---- Money flow ----
+    vt = 0
+    if len(vols_list) >= 3:
+        half = len(vols_list)//2
+        first_half = sum(vols_list[:half])/half if half > 0 else 0
+        second_half = sum(vols_list[half:])/(len(vols_list)-half) if len(vols_list)-half > 0 else 0
+        if first_half > 0: vt = (second_half - first_half)/first_half * 100
+    if vt > 10 and green_days >= 2: score += 3
+    details["vol_trend"] = round(vt, 1)
+    
+    # ---- V8 TREND BONUS ----
+    tbonus, tdetail, tconf = trend_bonus_v8(kls, ki)
+    score += tbonus
+    details["trend"] = tdetail if tdetail else "无"
+    details["trend_conf"] = tconf
+    
+    # ---- Momentum 5-day ----
+    mom5 = 0
+    if ki >= 5:
+        mom5 = (p - kls[ki-4]["close"]) / kls[ki-4]["close"] * 100
+        if mom5 > 8: score += 5
+        elif mom5 > 4: score += 3
+        elif mom5 > 0: score += 1
+    details["mom5"] = round(mom5, 1)
+    
+    # ---- Vol+price rising ----
+    if ki >= 2:
+        vol_rising = kls[ki]["volume"] > kls[ki-1]["volume"] and kls[ki-1]["volume"] > kls[ki-2]["volume"]
+        price_rising = kls[ki]["close"] > kls[ki-1]["close"] and kls[ki-1]["close"] > kls[ki-2]["close"]
+        if vol_rising and price_rising: score += 3
+        elif price_rising: score += 1
+    
+    # ---- Market state ----
+    market_label = "SIDEWAYS"
+    if market_idx_kls and len(market_idx_kls) >= 20:
+        idx_closes = [k["close"] for k in market_idx_kls[-20:]]
+        idx_ma20 = sum(idx_closes)/20
+        idx_ma60 = sum(k["close"] for k in market_idx_kls[-60:])/60 if len(market_idx_kls) >= 60 else idx_ma20
+        idx_close = market_idx_kls[-1]["close"]
+        idx_slope5 = (idx_closes[-1] - idx_closes[-5])/idx_closes[-5]*100 if len(idx_closes) >= 5 else 0
+        is_bullish = idx_close >= idx_ma20
+        is_strong = is_bullish and idx_slope5 > 0.3
+        is_sideways = not is_bullish and idx_close >= idx_ma60 if len(market_idx_kls) >= 60 else True
+        if is_strong: market_label = "BULLISH+"
+        elif is_bullish: market_label = "BULLISH"
+        elif is_sideways: market_label = "SIDEWAYS"
+        else: market_label = "WEAK+"
+    details["market"] = market_label
+    
+    # ---- Market bully bonus ----
+    if market_label == "BULLISH+" and tconf >= 1: score += 4
+    elif market_label == "BULLISH" and tconf >= 1: score += 2
+    
+    # ---- TIMING ADVICE (matching sim_v8i.py) ----
+    if tconf >= 2 and mom5 > 4 and market_label in ("BULLISH+", "BULLISH"):
+        timing = "强烈推荐"; timing_reason = "强趋势+强动量+市场配合可买入"
+    elif tconf >= 1 and mom5 > 1 and market_label in ("BULLISH+", "BULLISH", "SIDEWAYS"):
+        timing = "推荐"; timing_reason = "趋势健康+市场平稳可关注"
+    elif tconf >= 0 and mom5 > -1 and market_label in ("BULLISH+", "BULLISH", "SIDEWAYS", "WEAK+"):
+        timing = "适当关注"; timing_reason = "基本条件满足可适当关注"
+    elif market_label in ("BULLISH+", "BULLISH"):
+        timing = "观望"; timing_reason = "大盘强势但个股信号弱"
+    else:
+        return 0, details, "跳过"  # sim_v8i skips these entirely
+    
+    details["timing_reason"] = timing_reason
+    final_score = min(100, max(0, round(score)))
+    details["total"] = final_score
+    
+    # ---- TP/SL/Position calculation (matching sim_v8i.py) ----
+    # ATR-based
+    atr_sum_pos = 0
+    for j in range(max(0, ki-13), ki+1):
+        atr_sum_pos += kls[j]["high"] - kls[j]["low"]
+    atr14_pos = atr_sum_pos / 14 if ki >= 13 else 2
+    atr_pct_pos = atr14_pos / p * 100 if p > 0 else 3
+    
+    if atr_pct_pos > 5: dtp, dsl, mhold = 7.0, -6.0, 2
+    elif atr_pct_pos > 3: dtp, dsl, mhold = 6.0, -5.0, 3
+    else: dtp, dsl, mhold = 5.0, -4.0, 4
+    
+    if timing == "强烈推荐": dtp = max(4.0, dtp - 1); mhold = min(6, mhold + 2)
+    elif timing == "推荐": mhold = min(5, mhold + 1)
+    elif timing == "适当关注": dtp = min(7.0, dtp + 1); dsl = max(-3.0, dsl + 1)
+    
+    if market_label == "BULLISH+" and timing in ("强烈推荐", "推荐"):
+        dsl -= 0.5; mhold = min(7, mhold + 1)
+    if market_label == "BULLISH" and timing == "强烈推荐":
+        mhold = min(6, mhold + 1)
+    
+    # Position sizing
+    if timing == "强烈推荐": pos_pct = 100
+    elif timing == "推荐": pos_pct = 90
+    elif timing == "适当关注": pos_pct = 60
+    else: pos_pct = 30
+    
+    tp_price = round(p * (1 + dtp / 100), 2)
+    sl_price = round(p * (1 + dsl / 100), 2)
+    
+    details["tp_price"] = tp_price
+    details["sl_price"] = sl_price
+    details["tp_pct"] = dtp
+    details["sl_pct"] = dsl
+    details["max_hold"] = mhold
+    details["position_pct"] = pos_pct
+    details["atr_pct"] = round(atr_pct_pos, 1)
+    details["market_label"] = market_label
+    
+    return final_score, details, timing
+
+
+def score_v8i_live(quote, kls):
+    """Compatibility wrapper - delegates to score_v8i"""
+    idx_kls = fetch_kline_sina("sh000001", 60)
+    return score_v8i(quote, kls, idx_kls)
+
+
+# ============ V8i Helper Functions ============
+
+def calc_adx_live(highs, lows, closes, period=14):
+    n = len(closes)
+    if n < period + 1: return 0, 0, 0
+    tr_list = []; plus_dm = []; minus_dm = []
+    for i in range(1, n):
+        h_v, l_v, c = highs[i], lows[i], closes[i]
+        ph, pl = highs[i-1], lows[i-1]
+        tr = max(h_v-l_v, abs(h_v-ph), abs(l_v-pl))
+        tr_list.append(tr)
+        updm = h_v-ph if (h_v-ph) > (pl-l_v) and (h_v-ph) > 0 else 0
+        dndm = pl-l_v if (pl-l_v) > (h_v-ph) and (pl-l_v) > 0 else 0
+        plus_dm.append(updm); minus_dm.append(dndm)
+    atr = sum(tr_list[:period])/period
+    atr_pdm = sum(plus_dm[:period])/period
+    atr_ndm = sum(minus_dm[:period])/period
+    alpha = 1.0/period
+    for i in range(period, len(tr_list)):
+        atr = atr*(1-alpha) + tr_list[i]*alpha
+        atr_pdm = atr_pdm*(1-alpha) + plus_dm[i]*alpha
+        atr_ndm = atr_ndm*(1-alpha) + minus_dm[i]*alpha
+    pdi = 100*atr_pdm/atr if atr > 0 else 0
+    ndi = 100*atr_ndm/atr if atr > 0 else 0
+    dx = 100*abs(pdi-ndi)/(pdi+ndi) if (pdi+ndi) > 0 else 0
+    return round(dx, 1), round(pdi, 1), round(ndi, 1)
+
+
+def linear_reg_slope_r2(ys):
+    n = len(ys)
+    if n < 3: return 0, 0
+    xs = list(range(n))
+    mx = sum(xs)/n; my = sum(ys)/n
+    ss_xy = sum((xs[i]-mx)*(ys[i]-my) for i in range(n))
+    ss_xx = sum((x-mx)**2 for x in xs)
+    if ss_xx == 0: return 0, 0
+    slope = ss_xy/ss_xx
+    ss_res = sum((ys[i] - (my + slope*(xs[i]-mx)))**2 for i in range(n))
+    ss_tot = sum((y-my)**2 for y in ys)
+    r2 = 1 - ss_res/ss_tot if ss_tot > 0 else 0
+    return slope/my*100 if my != 0 else 0, r2
+
+
+def calc_mfi(highs, lows, closes, vols, period=14):
+    n = len(closes)
+    if n < period + 1: return 50
+    tp_list = []; mf_list = []
+    for i in range(1, n):
+        tp = (highs[i] + lows[i] + closes[i])/3
+        mf = tp * vols[i]
+        tp_list.append(tp); mf_list.append(mf)
+    pos_mf = 0; neg_mf = 0
+    for i in range(len(mf_list)-period, len(mf_list)):
+        if i > 0 and tp_list[i] > tp_list[i-1]: pos_mf += mf_list[i]
+        elif i > 0: neg_mf += mf_list[i]
+    if neg_mf == 0: return 100
+    mfr = pos_mf/neg_mf if neg_mf > 0 else 1
+    return round(100 - (100/(1+mfr)), 1)
+
+
+def calc_macd_bonus(closes):
+    n = len(closes)
+    if n < 35: return 0, ""
+    def ema(data, period):
+        if len(data) < period: return [data[-1]]
+        result = [sum(data[:period])/period]
+        alpha = 2.0/(period+1)
+        for i in range(period, len(data)):
+            result.append(data[i]*alpha + result[-1]*(1-alpha))
+        return result
+    ema12 = ema(closes, 12); ema26 = ema(closes, 26)
+    min_len = min(len(ema12), len(ema26))
+    macd_vals = [ema12[i]-ema26[i] for i in range(min_len)]
+    sig_vals = ema(macd_vals, 9) if len(macd_vals) >= 9 else [macd_vals[-1]]
+    macd_l = macd_vals[-1]; sig_l = sig_vals[-1]
+    hist = macd_l - sig_l
+    prev_hist = macd_vals[-2]-sig_vals[-2] if len(macd_vals)>=2 and len(sig_vals)>=2 else 0
+    bonus = 0; detail = ""
+    if macd_l > sig_l and macd_l > 0:
+        bonus += 3; detail = "MACD+"
+        if hist > prev_hist: bonus += 1
+    elif macd_l > sig_l:
+        bonus += 1; detail = "MACDX"
+    return bonus, detail
+
+
+def trend_bonus_v8(kls, ki):
+    closes = [k["close"] for k in kls[max(0, ki-25):ki+1]]
+    highs = [k["high"] for k in kls[max(0, ki-25):ki+1]]
+    lows = [k["low"] for k in kls[max(0, ki-25):ki+1]]
+    vols = [k["volume"] for k in kls[max(0, ki-25):ki+1]]
+    if len(closes) < 20: return 0, "", 0
+    
+    bonus = 0; details = []; confidence = 0
+    
+    adx, pdi, ndi = calc_adx_live(highs, lows, closes)
+    if adx > 30: bonus += 5; confidence += 2; details.append("ADX"+str(int(adx))+"+")
+    elif adx > 25: bonus += 3; confidence += 1; details.append("ADX"+str(int(adx)))
+    elif adx > 20: bonus += 1; details.append("ADX"+str(int(adx)))
+    else: details.append("ADX"+str(int(adx)))
+    if pdi > ndi and adx > 20: bonus += 2
+    
+    slope10, r2_10 = linear_reg_slope_r2(closes[-10:])
+    if r2_10 > 0.6 and slope10 > 0: bonus += 3; confidence += 1; details.append("R2+")
+    elif r2_10 > 0.4 and slope10 > 0: bonus += 1
+    
+    slope20, r2_20 = linear_reg_slope_r2(closes[-20:])
+    if r2_20 > 0.5 and slope20 > 0: bonus += 2; confidence += 1; details.append("20T+")
+    
+    slope5, _ = linear_reg_slope_r2(closes[-5:])
+    if slope5 > 0 and slope10 > 0 and slope20 > 0: bonus += 3; confidence += 1; details.append("ALIGN")
+    elif slope5 > 0 and slope10 > 0: bonus += 1
+    
+    up_vol = 0; dn_vol = 0
+    for i in range(1, len(closes)):
+        if closes[i] > closes[i-1]:
+            vi = i - max(0, len(closes)-len(vols))
+            if 0 <= vi < len(vols): up_vol += vols[vi]
+        else:
+            vi = i - max(0, len(closes)-len(vols))
+            if 0 <= vi < len(vols): dn_vol += vols[vi]
+    if dn_vol == 0: dn_vol = 1
+    if up_vol > dn_vol*1.3: bonus += 2; confidence += 1; details.append("VUP")
+    
+    mfi = calc_mfi(highs, lows, closes, vols)
+    if 55 <= mfi <= 75: bonus += 3; details.append("MFI"+str(int(mfi)))
+    elif 45 <= mfi <= 80: bonus += 1
+    
+    macd_b, macd_d = calc_macd_bonus(closes)
+    bonus += macd_b
+    if macd_d: details.append(macd_d)
+    
+    if len(closes) >= 20:
+        bb_ma = sum(closes[-20:])/20
+        variance = sum((x-bb_ma)**2 for x in closes[-20:])/20
+        sigma = math.sqrt(variance)
+        bb_upper = bb_ma + 2*sigma; bb_lower = bb_ma - 2*sigma
+        bb_pct = (closes[-1]-bb_lower)/(bb_upper-bb_lower) if bb_upper > bb_lower else 0.5
+        if 0.6 <= bb_pct <= 0.9: bonus += 2; details.append("BB"+str(int(bb_pct*100)))
+    
+    return bonus, ",".join(details), confidence
+
+
+# Keep old score_v8i_live reference point for compatibility
+# score_v8i_live is now defined above as wrapper to score_v8i
+
+
+
+HOLDINGS_FILE=os.path.join(os.path.dirname(os.path.abspath(__file__)),"holdings.json")
+
+def load_holdings():
+    try:
+        with open(HOLDINGS_FILE,"r",encoding="utf-8") as f:
+            return json.load(f)
+    except: return []
+
+def save_holdings(data):
+    with open(HOLDINGS_FILE,"w",encoding="utf-8") as f:
+        json.dump(data,f,ensure_ascii=False)
+
+def analyze_holding(code, name, buy_price, shares, buy_date):
+    sym=("sh" if code.startswith("6") else "sz")+code
+    kls=fetch_kline_sina(sym, 80)
+    # Estimate hold days from buy_date
+    from datetime import datetime
+    hold_days_est = 1
+    if buy_date:
+        try:
+            buy_dt = datetime.strptime(buy_date.replace("-",""), "%Y%m%d")
+            today = datetime.now()
+            # Count trading days (approximate: weekdays only)
+            hold_days_est = max(1, len([d for d in kls if d["day"] >= buy_date]))
+        except:
+            pass
+    if not kls:
+        return {"code":code,"name":name,"buy_price":buy_price,"shares":shares,"cur_price":0,"pnl_pct":0,"pnl_amt":0,"market_value":0,"advice":"数据不足","reason":"无法获取K线数据"}
+    latest=kls[-1]; cur_price=latest["close"]; cur_day=latest["day"]
+    pnl=(cur_price-buy_price)/buy_price*100; pnl_amt=(cur_price-buy_price)*shares; market_value=cur_price*shares
+    closes=[k["close"] for k in kls]; highs=[k["high"] for k in kls]; lows=[k["low"] for k in kls]; vols=[k["volume"] for k in kls]
+    if len(closes)<20:
+        return {"code":code,"name":name,"buy_price":buy_price,"shares":shares,"cur_price":round(cur_price,2),"pnl_pct":round(pnl,2),"pnl_amt":round(pnl_amt,2),"market_value":round(market_value,2),"advice":"持有","reason":"数据不足无法分析"}
+    gains=[]; losses_r=[]
+    for i in range(1,min(7,len(closes))):
+        diff=closes[-i]-closes[-i-1]
+        if diff>=0: gains.append(diff)
+        else: losses_r.append(abs(diff))
+    avg_g=sum(gains)/6 if gains else 0.0001; avg_l=sum(losses_r)/6 if losses_r else 0.0001
+    rsi=100-(100/(1+avg_g/avg_l)) if avg_l>0 else 100
+    ma5=sum(closes[-5:])/5; ma10=sum(closes[-10:])/10; ma20=sum(closes[-20:])/20
+    tr_list=[]; plus_dm=[]; minus_dm=[]
+    for i in range(1,len(closes)):
+        h,l,c=highs[i],lows[i],closes[i]; ph,pl=highs[i-1],lows[i-1]
+        tr=max(h-l,abs(h-ph),abs(l-pl)); tr_list.append(tr)
+        updm=h-ph if (h-ph)>(pl-l) and (h-ph)>0 else 0
+        dndm=pl-l if (pl-l)>(h-ph) and (pl-l)>0 else 0
+        plus_dm.append(updm); minus_dm.append(dndm)
+    period=14; adx=0
+    if len(tr_list)>=period:
+        atr_v=sum(tr_list[:period])/period; atr_p=sum(plus_dm[:period])/period; atr_n=sum(minus_dm[:period])/period
+        alpha=1.0/period
+        for i in range(period,len(tr_list)):
+            atr_v=atr_v*(1-alpha)+tr_list[i]*alpha; atr_p=atr_p*(1-alpha)+plus_dm[i]*alpha; atr_n=atr_n*(1-alpha)+minus_dm[i]*alpha
+        pdi=100*atr_p/atr_v if atr_v>0 else 0; ndi=100*atr_n/atr_v if atr_v>0 else 0
+        dx=100*abs(pdi-ndi)/(pdi+ndi) if (pdi+ndi)>0 else 0; adx=dx
+    avg_vol5=sum(vols[-6:-1])/5 if len(vols)>=6 else vols[-1]; vol_ratio=vols[-1]/avg_vol5 if avg_vol5>0 else 1
+    trend_up=cur_price>ma5>ma10>ma20; trend_down=cur_price<ma20
+    rsi_oh=rsi>75; rsi_healthy=50<=rsi<=70; vol_exp=vol_ratio>1.3
+    advice="持有"; reason=""
+    if pnl>=10:
+        if rsi_oh or (pnl>=20 and not vol_exp): advice="止盈卖出"; reason="盈利%.1f%%且过热,RSI%d高位"%(pnl,int(rsi))
+        else: advice="持有"; reason="盈利%.1f%%且趋势健康"%pnl
+    elif pnl>=5:
+        if trend_down: advice="减仓"; reason="盈利%.1f%%但跌破20日均线"%pnl
+        elif rsi_oh: advice="减仓"; reason="盈利%.1f%%但RSI%d过热"%(pnl,int(rsi))
+        else: advice="持有"; reason="盈利%.1f%%趋势良好"%pnl
+    elif pnl>=-3:
+        if trend_up and rsi_healthy and vol_exp: advice="加仓"; reason="多头趋势+放量+RSI健康"
+        elif trend_up: advice="持有"; reason="多头趋势良好"
+        elif cur_price>ma5: advice="持有"; reason="站稳5日均线"
+        else: advice="持有"; reason="短期震荡观望"
+    elif pnl>=-5:
+        if trend_down: advice="止损卖出"; reason="亏损%.1f%%且趋势走弱"%pnl
+        else: advice="减仓"; reason="亏损%.1f%%注意风险"%pnl
+    else: advice="止损卖出"; reason="亏损%.1f%%建议止损"%pnl
+    
+    # ---- TP/SL/Position calculation ----
+    atr_sum_h = 0
+    for j in range(max(0, len(highs)-14), len(highs)):
+        atr_sum_h += highs[j] - lows[j]
+    atr14_h = atr_sum_h / 14 if len(highs) >= 14 else 2
+    atr_pct_h = atr14_h / cur_price * 100 if cur_price > 0 else 3
+    
+    if atr_pct_h > 5: h_tp, h_sl, h_hold = 7.0, -6.0, 2
+    elif atr_pct_h > 3: h_tp, h_sl, h_hold = 6.0, -5.0, 3
+    else: h_tp, h_sl, h_hold = 5.0, -4.0, 4
+    
+    # Adjust based on trend
+    if trend_up: h_tp = max(4.0, h_tp - 1); h_hold = min(6, h_hold + 2)
+    elif trend_down: h_tp = min(7.0, h_tp + 1); h_sl = max(-3.0, h_sl + 1)
+    
+    # Position advice
+    if pnl >= 5 and trend_up: pos_advice = 80
+    elif pnl >= 0 and trend_up: pos_advice = 60
+    elif pnl >= -3: pos_advice = 40
+    else: pos_advice = 20
+    
+    tp_price_h = round(cur_price * (1 + h_tp / 100), 2)
+    sl_price_h = round(cur_price * (1 + h_sl / 100), 2)
+    
+    # ---- SELL SIGNAL MONITORING ----
+    highest_since_buy = max([h["high"] for h in kls[-hold_days_est:]]) if kls else cur_price
+    profit_from_high = (highest_since_buy - buy_price) / buy_price * 100
+    
+    sell_signals = []
+    
+    # 1. Take profit
+    if cur_price >= buy_price * (1 + h_tp / 100):
+        sell_signals.append("止盈触发: {:.2f} > 目标{:.2f}".format(cur_price, buy_price * (1 + h_tp / 100)))
+    elif cur_price >= buy_price * 1.03:
+        gap = round((buy_price * (1 + h_tp / 100) / cur_price - 1) * 100, 1)
+        sell_signals.append("接近止盈: 距{:.2f}还差{:.1f}%".format(buy_price * (1 + h_tp / 100), gap))
+    
+    # 2. Stop loss
+    if cur_price <= buy_price * (1 + h_sl / 100):
+        sell_signals.append("止损触发: {:.2f} < 止损{:.2f}".format(cur_price, buy_price * (1 + h_sl / 100)))
+    
+    # 3. Trailing stop
+    if profit_from_high >= 5:
+        protected = buy_price + (highest_since_buy - buy_price) * 0.4
+        if cur_price <= protected:
+            sell_signals.append("移动止盈触发: 最高{:.2f} 保护{:.2f}".format(highest_since_buy, protected))
+        else:
+            sell_signals.append("移动止盈监控: 最高{:.2f} 保护{:.2f}".format(highest_since_buy, protected))
+    
+    # 4. Weakness
+    if hold_days_est >= 2 and pnl < -1:
+        sell_signals.append("走弱: 持有{}天亏损{:.1f}%".format(hold_days_est, pnl))
+    
+    # 5. Break MA5
+    if hold_days_est >= 2 and cur_price < ma5:
+        sell_signals.append("跌破MA5: {:.2f} < {:.2f}".format(cur_price, ma5))
+    
+    # 6. Expiry
+    if hold_days_est >= h_hold - 1:
+        sell_signals.append("临近到期: 已持{}/{}天".format(hold_days_est, h_hold))
+    
+    if not sell_signals:
+        sell_signals.append("无卖出信号, 继续持有")
+    
+    return {"code":code,"name":name,"buy_price":buy_price,"shares":shares,"buy_date":buy_date,"cur_price":round(cur_price,2),"cur_day":cur_day,"pnl_pct":round(pnl,2),"pnl_amt":round(pnl_amt,2),"market_value":round(market_value,2),"cost":round(buy_price*shares,2),"rsi":round(rsi,0),"adx":round(adx,0),"vol_ratio":round(vol_ratio,1),"ma5":round(ma5,2),"ma10":round(ma10,2),"ma20":round(ma20,2),"advice":advice,"reason":reason,"tp_price":tp_price_h,"sl_price":sl_price_h,"tp_pct":round(h_tp,1),"sl_pct":round(h_sl,1),"max_hold":h_hold,"position_pct":pos_advice,"atr_pct":round(atr_pct_h,1),"sell_signals":sell_signals,"highest":round(highest_since_buy,2),"hold_days":hold_days_est}
+
+def analyze_all_holdings():
+    holdings=load_holdings(); results=[]
+    for h in holdings:
+        r=analyze_holding(h["code"],h["name"],h["buy_price"],h["shares"],h.get("buy_date",""))
+        results.append(r)
+    return results
+
+
+def market_state_ok():
+    """Quick market state check for live mode"""
+    try:
+        idx_kl = fetch_kline_sina("sh000001", 30)
+        if not idx_kl or len(idx_kl) < 20: return True
+        closes = [k["close"] for k in idx_kl]
+        ma20 = sum(closes[-20:]) / 20
+        return closes[-1] >= ma20
+    except: return True
+
 def screen(ms=50, topn=50, date_str=None):
     stocks=get_stocks()
     codes=[c for c,_ in stocks]
     if date_str:
         kline_data=get_historical_data(codes, date_str)
+        # Pre-fetch index klines for market state (filtered to target date)
+        idx_kls_raw = fetch_kline_sina("sh000001", 200)
+        idx_kls_hist = [k for k in (idx_kls_raw or []) if k["day"] <= date_str]
         results=[]
         for code,name in stocks:
             if code not in kline_data: continue
             kls=kline_data[code]
             dd=extract_date_data(kls, date_str)
             if dd is None: continue
-            dd["name"]=name; dd["price"]=dd["close"]
-            dd["turnover"]=0; dd["amt"]=dd.get("volume",0)*dd["close"]/100
-            dd["mktcap"]=0
-            sc,det=score_v5(dd)
-            if sc>=ms:
-                results.append({"code":code,"name":name,"score":sc,"price":dd["close"],"change_pct":((dd["close"]-dd["prev_close"])/dd["prev_close"]*100) if dd.get("prev_close") and dd["prev_close"]>0 else 0,"amount":dd.get("volume",0)*dd["close"]/100,"turnover":0,"trade_date":date_str,"advice":det.get("advice",""),"risk":det.get("risk",""),"details":det})
+            p = dd["close"]; yc = dd.get("prev_close", 0)
+            if yc <= 0: continue
+            chg = (p - yc) / yc * 100
+            # ---- FAST pre-filter (same basic criteria as live) ----
+            if chg < 1.0 or chg > 5.5: continue
+            amp_v = dd.get("amp", 0)
+            if amp_v > 6.0: continue
+            if dd.get("close_position", 0) < 0.55: continue
+            if p < 4 or p > 80: continue
+            amt_v = dd.get("volume", 0) * p
+            if amt_v < 50000000: continue
+            # ---- V8i DEEP SCORING (matching sim_v8i.py exactly) ----
+            kls = kline_data[code]
+            ki = dd["_idx"]
+            if ki < 25: continue
+            
+            close = dd["close"]; prev_close = dd.get("prev_close", 0)
+            cp_v = dd.get("close_position", 1)
+            br_v = dd.get("body_ratio", 0)
+            us_v = dd.get("upper_shadow", 0)
+            if cp_v < 0.55 or br_v < 0.25 or us_v > 0.45: continue
+            if close < dd.get("ma5", 0): continue
+            vt_v = dd.get("vol_trend", 0) or 0
+            if vt_v < -5: continue
+            
+            closes_list = [k["close"] for k in kls[max(0,ki-25):ki+1]]
+            highs_list = [k["high"] for k in kls[max(0,ki-25):ki+1]]
+            vols_list = [k["volume"] for k in kls[max(0,ki-25):ki+1]]
+            
+            # RSI(6)
+            gains = []; losses = []
+            for ii in range(1, min(7, len(closes_list))):
+                diff = closes_list[-ii] - closes_list[-ii-1]
+                if diff >= 0: gains.append(diff)
+                else: losses.append(abs(diff))
+            ag = sum(gains)/6 if gains else 0.0001
+            al = sum(losses)/6 if losses else 0.0001
+            rsi6 = 100 - (100 / (1 + ag/al)) if al > 0 else 100
+            
+            avg_vol5 = sum(vols_list[-6:-1]) / 5 if len(vols_list) >= 6 else vols_list[-1]
+            vr = vols_list[-1] / avg_vol5 if avg_vol5 > 0 else 1
+            
+            gd = 0
+            for jj in range(ki, max(-1, ki-3), -1):
+                if jj >= 0 and kls[jj]["close"] >= kls[jj]["open"]: gd += 1
+                else: break
+            if ki > 0 and kls[ki]["close"] < kls[ki]["open"]: gd = 0
+            
+            h20 = max(highs_list[-20:]) if len(highs_list) >= 20 else max(highs_list)
+            dh = (close - h20) / h20 * 100 if h20 > 0 else 0
+            amt_val = vols_list[-1] * close / 100
+            
+            # ---- IMPROVED FILTERS (sim_v8i) ----
+            if rsi6 < 45 or rsi6 > 72: continue
+            if vr < 1.0 or vr > 4.0: continue
+            if gd < 1: continue
+            if dh < -8: continue
+            if amt_val < 50000000: continue
+            
+            tb, td, tc = trend_bonus_v8(kls, ki)
+            
+            score = 0
+            if 55 <= rsi6 <= 65: score += 8
+            elif 50 <= rsi6 <= 70: score += 5
+            else: score += 2
+            if 1.3 <= vr <= 2.5: score += 7
+            elif 1.0 <= vr <= 3.0: score += 4
+            else: score += 1
+            if dh >= -1: score += 5
+            elif dh >= -3: score += 3
+            elif dh >= -5: score += 1
+            if dd.get("ma20") and close > dd["ma20"]: score += 4
+            if 2.5 <= chg <= 4.5: score += 5
+            elif 1.5 <= chg <= 5: score += 3
+            ma5_v = dd.get("ma5",0); ma10_v = dd.get("ma10",0); ma20_v = dd.get("ma20",0)
+            if ma5_v > ma10_v > ma20_v: score += 4
+            elif ma5_v > ma10_v: score += 2
+            score += min(gd, 3)
+            amp_v = dd.get("amp", 0)
+            if amp_v <= 3: score += 3
+            elif amp_v <= 4: score += 1
+            if dd.get("recent_limit_up"): score += 3
+            ay = amt_val / 1e8
+            if ay >= 5: score += 3
+            elif ay >= 1: score += 1
+            if vt_v > 10 and gd >= 2: score += 3
+            score += tb
+            
+            mom5 = 0
+            if ki >= 5:
+                mom5 = (close - kls[ki-4]["close"]) / kls[ki-4]["close"] * 100
+                if mom5 > 8: score += 5
+                elif mom5 > 4: score += 3
+                elif mom5 > 0: score += 1
+            
+            if ki >= 2:
+                vr2 = kls[ki]["volume"] > kls[ki-1]["volume"] and kls[ki-1]["volume"] > kls[ki-2]["volume"]
+                pr2 = kls[ki]["close"] > kls[ki-1]["close"] and kls[ki-1]["close"] > kls[ki-2]["close"]
+                if vr2 and pr2: score += 3
+                elif pr2: score += 1
+            
+            # Market state (pre-fetched)
+            market_label = "SIDEWAYS"
+            if idx_kls_hist and len(idx_kls_hist) >= 20:
+                idx_cl = [k["close"] for k in idx_kls_hist[-20:]]
+                idx_ma20 = sum(idx_cl)/20
+                idx_ma60 = sum(k["close"] for k in idx_kls_hist[-60:])/60 if len(idx_kls_hist) >= 60 else idx_ma20
+                idx_close = idx_kls_hist[-1]["close"]
+                idx_s5 = (idx_cl[-1] - idx_cl[-5])/idx_cl[-5]*100 if len(idx_cl) >= 5 else 0
+                is_bull = idx_close >= idx_ma20
+                is_strong = is_bull and idx_s5 > 0.3
+                is_side = not is_bull and idx_close >= idx_ma60 if len(idx_kls_hist) >= 60 else True
+                if is_strong: market_label = "BULLISH+"
+                elif is_bull: market_label = "BULLISH"
+                elif is_side: market_label = "SIDEWAYS"
+                else: market_label = "WEAK+"
+            
+            # Advice
+            advice = "HOLD"
+            if tc >= 2 and mom5 > 4 and market_label in ("BULLISH+", "BULLISH"):
+                advice = "强烈买入"
+            elif tc >= 1 and mom5 > 1 and market_label in ("BULLISH+", "BULLISH", "SIDEWAYS"):
+                advice = "买入"
+            elif tc >= 0 and mom5 > -1 and market_label in ("BULLISH+", "BULLISH", "SIDEWAYS", "WEAK+"):
+                advice = "谨慎买入"
+            elif market_label in ("BULLISH+", "BULLISH"):
+                advice = "观望"
+            else:
+                continue  # Skip entirely (matching sim_v8i)
+            
+            # Market bully bonus
+            if market_label == "BULLISH+" and advice in ("强烈买入", "买入"): score += 4
+            elif market_label == "BULLISH" and advice == "强烈买入": score += 2
+            
+            # Dynamic TP/SL
+            ats = sum(kls[j]["high"] - kls[j]["low"] for j in range(max(0, ki-13), ki+1))
+            atr14 = ats / 14 if ki >= 13 else 2
+            ap_pct = atr14 / close * 100
+            if ap_pct > 5: dtp, dsl, mh = 7.0, -6.0, 2
+            elif ap_pct > 3: dtp, dsl, mh = 6.0, -5.0, 3
+            else: dtp, dsl, mh = 5.0, -4.0, 4
+            if advice == "强烈买入": dtp = max(4.0, dtp - 1); mh = min(6, mh + 2)
+            elif advice == "买入": mh = min(5, mh + 1)
+            elif advice == "谨慎买入": dtp = min(7.0, dtp + 1); dsl = max(-3.0, dsl + 1)
+            if market_label == "BULLISH+" and advice in ("强烈买入", "买入"): dsl -= 0.5; mh = min(7, mh + 1)
+            if market_label == "BULLISH" and advice == "强烈买入": mh = min(6, mh + 1)
+            
+            pos_pct = 100 if advice == "强烈买入" else (90 if advice == "买入" else (60 if advice == "谨慎买入" else 30))
+            tp_price = round(close * (1 + dtp / 100), 2)
+            sl_price = round(close * (1 + dsl / 100), 2)
+            
+            details = {
+                "chg": round(chg,2), "amp": round(amp_v,2),
+                "rsi": round(rsi6,0), "vol_ratio": round(vr,1),
+                "dist_high": round(dh,1),
+                "ma5": round(ma5_v,2), "ma10": round(ma10_v,2), "ma20": round(ma20_v,2),
+                "ma_arrange": "多头排列" if ma5_v>ma10_v>ma20_v else ("偏多" if ma5_v>ma10_v else "偏空"),
+                "limit_gene": "有" if dd.get("recent_limit_up") else "无",
+                "vol_trend": round(vt_v,1),
+                "trend": td if td else "无", "trend_conf": tc,
+                "mom5": round(mom5,1),
+                "market": market_label, "market_label": market_label,
+                "tp_price": tp_price, "sl_price": sl_price,
+                "tp_pct": dtp, "sl_pct": dsl,
+                "max_hold": mh, "position_pct": pos_pct,
+                "atr_pct": round(ap_pct,1),
+                "timing_reason": "强趋势+市场配合可满仓" if advice=="强烈买入" else ("趋势健康可标准仓" if advice=="买入" else "信号偏弱可轻仓"),
+                "total": min(100, max(0, round(score)))
+            }
+            
+            if score >= ms:
+                results.append({"code":code,"name":name,"score":min(100,max(0,round(score))),"price":close,"change_pct":round(chg,2),"amount":amt_val,"turnover":dd.get("turnover",0),"trade_date":date_str,"advice":advice,"risk":"","details":details})
         results.sort(key=lambda x:x["score"],reverse=True)
         return results[:topn]
     else:
+        PROGRESS["total"]=len(stocks); PROGRESS["done"]=0; PROGRESS["msg"]="Fetching real-time quotes..."
         quotes=get_quotes(codes)
+        PROGRESS["msg"]=f"Got {len(quotes)} quotes, fetching kline data..."
+        
         results=[]
+        # Step 1: fast filter using quotes
+        candidates=[]
         for code,name in stocks:
             if code not in quotes: continue
             d=quotes[code]
-            sc,det=score_v5(d)
+            p=f(d.get("price",0)); yc=f(d.get("yclose",0))
+            if p<=0 or yc<=0: continue
+            chg=(p-yc)/yc*100
+            if chg<1.0 or chg>5.5: continue
+            h_v=f(d.get("high",0)); l_v=f(d.get("low",0))
+            if yc>0 and h_v and l_v:
+                amp=(h_v-l_v)/yc*100
+                if amp>6.0: continue
+            candidates.append((code,name,d))
+        
+        PROGRESS["msg"]=f"Fast-filtered {len(candidates)} candidates, deep scoring..."
+        
+        # Step 2: deep score with kline data for candidates
+        # Fetch kline for all candidates in parallel
+        kline_map={}
+        def fetch_one(code):
+            sym=("sh" if code.startswith("6") else "sz")+code
+            return code, fetch_kline_sina(sym, 60)
+        
+        with ThreadPoolExecutor(max_workers=30) as ex:
+            futs={ex.submit(fetch_one,c):c for c,*_ in [x for x in candidates[:300]]}
+            for i,fut in enumerate(as_completed(futs)):
+                code,kls=fut.result()
+                if kls: kline_map[code]=kls
+                if (i+1)%100==0: PROGRESS["msg"]=f"Deep scored {i+1}/{len(candidates[:300])}..."
+        
+        PROGRESS["msg"]=f"Scoring {len(candidates)} stocks..."
+        
+        for code,name,d in candidates:
+            kls=kline_map.get(code, [])
+            sc,det,timing=score_v8i_live(d, kls)
             if sc>=ms:
-                results.append({"code":code,"name":name,"score":sc,"price":d["price"],"change_pct":det.get("chg",0),"amount":d["amt"],"turnover":d.get("turnover",0),"trade_date":d.get("date",""),"advice":det.get("advice",""),"risk":det.get("risk",""),"details":det})
+                results.append({
+                    "code":code,"name":name,"score":sc,
+                    "price":round(f(d.get("price",0)),2),
+                    "change_pct":round(det.get("chg",0),2),
+                    "amount":f(d.get("amt",0)),
+                    "turnover":f(d.get("turnover",0)),
+                    "trade_date":d.get("date",""),
+                    "advice":timing,
+                    "timing_reason":det.get("timing_reason",""),
+                    "risk":det.get("filter","") if det.get("filter") else "",
+                    "details":det
+                })
+            PROGRESS["done"]=len(results)
+        
         results.sort(key=lambda x:x["score"],reverse=True)
+        PROGRESS["msg"]=f"Done! {len(results[:topn])} results"
         return results[:topn]
 
 def _load_html():
@@ -377,8 +1235,24 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Content-Length",str(len(b)))
         self.end_headers()
         self.wfile.write(b)
+
+    def do_POST(self):
+        self.do_GET()
+    def do_DELETE(self):
+        self.do_GET()
+
     def do_GET(self):
-        if self.path in ("/","/index.html"): self._s(get_html())
+        if self.path in ("/","/index.html"):
+            b=get_html().encode("utf-8") if isinstance(get_html(),str) else get_html()
+            self.send_response(200)
+            self.send_header("Content-Type","text/html; charset=utf-8")
+            self.send_header("Access-Control-Allow-Origin","*")
+            self.send_header("Cache-Control","no-cache, no-store, must-revalidate")
+            self.send_header("Pragma","no-cache")
+            self.send_header("Expires","0")
+            self.send_header("Content-Length",str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
         elif self.path.startswith("/api/scan"):
             qs=parse_qs(urlparse(self.path).query)
             ms=int(qs.get("min_score",[50])[0])
@@ -392,6 +1266,40 @@ class H(BaseHTTPRequestHandler):
                 import traceback
                 data={"error":str(e),"trace":traceback.format_exc()}
             self._s(json.dumps(data,ensure_ascii=False),"application/json; charset=utf-8")
+        
+        elif self.path.startswith("/api/holdings/analyze"):
+            results=analyze_all_holdings()
+            self._s(json.dumps({"holdings":results,"total_pnl":sum(r["pnl_amt"] for r in results),"total_value":sum(r["market_value"] for r in results)},ensure_ascii=False),"application/json; charset=utf-8")
+        elif self.path.startswith("/api/holdings"):
+            if self.command=="POST":
+                try:
+                    cl=int(self.headers.get("Content-Length",0))
+                    body=json.loads(self.rfile.read(cl))
+                    # Convert numeric fields
+                    for k in ("buy_price","shares"):
+                        if k in body:
+                            try: body[k]=float(body[k])
+                            except: pass
+                    if "shares" in body: body["shares"]=int(body["shares"])
+                    holdings=load_holdings()
+                    found=False
+                    for h in holdings:
+                        if h["code"]==body.get("code"):
+                            h.update(body); found=True; break
+                    if not found: holdings.append(body)
+                    save_holdings(holdings)
+                    self._s(json.dumps({"ok":True,"count":len(holdings)},ensure_ascii=False),"application/json; charset=utf-8")
+                except Exception as e:
+                    self._s(json.dumps({"error":str(e)},ensure_ascii=False),"application/json; charset=utf-8",code=400)
+            elif self.command=="DELETE":
+                qs=parse_qs(urlparse(self.path).query)
+                code=qs.get("code",[""])[0]
+                holdings=[h for h in load_holdings() if h["code"]!=code]
+                save_holdings(holdings)
+                self._s(json.dumps({"ok":True,"count":len(holdings)},ensure_ascii=False),"application/json; charset=utf-8")
+            else:
+                self._s(json.dumps(load_holdings(),ensure_ascii=False),"application/json; charset=utf-8")
+
         elif self.path.startswith("/api/progress"):
             self._s(json.dumps(PROGRESS,ensure_ascii=False),"application/json; charset=utf-8")
         else: self._s("404",code=404)
@@ -426,3 +1334,5 @@ if __name__=="__main__":
             if dt.get("risk") and dt["risk"]!="Clean":
                 print(f"     Risk: {dt['risk']}")
         print(f"\nTotal {len(r)} | Elapsed {time.time()-t0:.1f}s")
+
+
