@@ -639,6 +639,145 @@ def deep_score(row, fund_flow, rank_idx, sepa=None):
         'target_low': target_low,
     }
 
+def run_historical_screen(target_date):
+    t0 = time.time()
+    print(f"[history] Screening for {target_date}...")
+    
+    # Get stock codes
+    codes = get_stock_codes()
+    if not codes:
+        return {"error": "no_stock_list", "stocks": []}
+    
+    # Fetch kline data for ~300 representative stocks
+    sample_step = max(1, len(codes) // 300)
+    sample = codes[::sample_step][:350]
+    
+    s = requests.Session(); s.trust_env = False
+    s.headers.update({"User-Agent":"Mozilla/5.0","Referer":"https://finance.sina.com.cn/"})
+    
+    rows = []
+    for i, c in enumerate(sample):
+        try:
+            sid = c["sid"]
+            url = f"https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol={sid}&scale=240&ma=no&datalen=30"
+            r = s.get(url, timeout=8)
+            if r.status_code != 200:
+                continue
+            klines = json.loads(r.text)
+            
+            # Find data for target_date and previous day
+            dates = [k["day"] for k in klines]
+            if target_date not in dates:
+                continue
+            idx = dates.index(target_date)
+            if idx == 0:
+                continue  # No previous day data
+            
+            today = klines[idx]
+            yesterday = klines[idx - 1]
+            
+            prev_close = float(yesterday["close"])
+            price = float(today["close"])
+            
+            if prev_close <= 0 or price <= 0:
+                continue
+            
+            pct = (price - prev_close) / prev_close * 100
+            high = float(today["high"])
+            low = float(today["low"])
+            amp = (high - low) / prev_close * 100 if prev_close > 0 else 0
+            vol = float(today["volume"])
+            amount = float(today["volume"]) * price  # Approximate
+            
+            row = {
+                "code": c["code"], "name": c["name"],
+                "open": float(today["open"]), "prev_close": prev_close,
+                "price": price, "high": high, "low": low,
+                "volume": vol, "amount": amount,
+                "pct_change": round(pct, 2),
+                "amplitude": round(amp, 2),
+                "volume_ratio": 1.0,
+            }
+            rows.append(row)
+        except:
+            pass
+        if (i + 1) % 100 == 0:
+            print(f"[history] Fetching {i+1}/{len(sample)}...")
+    
+    if not rows:
+        return {"error": "no_data", "stocks": [], "message": f"无法获取{target_date}数据"}
+    
+    df = pd.DataFrame(rows)
+    total = len(df)
+    passed = screen_stocks(df)
+    
+    if passed.empty:
+        return {
+            "success": True, "total_screened": int(total), "matched": 0,
+            "stocks": [], "has_recommendation": False,
+            "timestamp": target_date, "market_open": True
+        }
+    
+    top_codes = passed.head(ScreenerConfig.TOP_N)["code"].tolist()
+    enriched = enrich_stock_details(top_codes)
+    fund_flow = fetch_fund_flow_batch(top_codes)
+    kline_data = fetch_kline_batch(top_codes, 60)
+    
+    stocks = []
+    for idx, (_, row) in enumerate(passed.head(ScreenerConfig.TOP_N).iterrows()):
+        code = row["code"]
+        em = enriched.get(code, {})
+        s = {
+            "code": code, "name": row["name"],
+            "price": round(float(row["price"]), 2) if pd.notna(row["price"]) else None,
+            "pct_change": round(float(row["pct_change"]), 2) if pd.notna(row["pct_change"]) else None,
+            "amplitude": round(float(row["amplitude"]), 2) if pd.notna(row.get("amplitude", 0)) else None,
+            "volume": safe_float(str(row.get("volume", ""))),
+            "amount": safe_float(str(row.get("amount", ""))),
+            "enhanced": {
+                "turnover": em.get("turnover_rate"),
+                "volume_ratio": em.get("volume_ratio"),
+                "mktcap_yi": em.get("float_mcap"),
+                "total_mcap_yi": em.get("total_mcap"),
+                "pe": em.get("pe_ttm") or em.get("pe_dyn"),
+                "pb": None, "momentum": em.get("momentum"),
+                "bid_ask": em.get("bid_ask_ratio"),
+                "chg_5d": em.get("chg_5d"), "chg_ytd": em.get("chg_ytd"),
+                "sector": em.get("sector"),
+            },
+        }
+        kd = kline_data.get(code, [])
+        sepa = calc_sepa_metrics(code, kd, float(row["price"]))
+        scoring = deep_score(row, fund_flow, idx, sepa)
+        s.update(scoring)
+        s["sepa"] = sepa
+        stocks.append(s)
+    
+    stocks.sort(key=lambda x: x["total"], reverse=True)
+    
+    # Quality filter
+    cfg = ScreenerConfig()
+    quality_stocks = []
+    reco_order = ["strong_buy", "buy", "watch", "avoid"]
+    for s in stocks:
+        score_ok = s["total"] >= cfg.MIN_TOTAL_SCORE
+        reco_ok = reco_order.index(s.get("reco_level", "avoid")) <= reco_order.index(cfg.MIN_RECO_LEVEL)
+        if score_ok and reco_ok:
+            quality_stocks.append(s)
+    
+    elapsed = time.time() - t0
+    print(f"[history] Done {elapsed:.1f}s: {len(quality_stocks)} quality picks from {len(stocks)} total")
+    
+    return {
+        "success": True, "total_screened": int(total), "matched": len(quality_stocks),
+        "quality_filtered": len(stocks) - len(quality_stocks),
+        "has_recommendation": len(quality_stocks) > 0,
+        "stocks": quality_stocks,
+        "timestamp": target_date, "market_open": True,
+        "is_historical": True,
+    }
+
+
 def is_market_open():
     now = datetime.now()
     if now.weekday() >= 5: return False

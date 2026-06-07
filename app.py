@@ -1,10 +1,10 @@
-"""
+﻿"""
 尾盘选股 Web 服务 - SSE实时推送版
 移动端响应式界面 + 尾盘时段高频刷新
 """
 import sys, os
 from flask import Flask, render_template, jsonify, request, Response, stream_with_context
-from engine import run_screen, is_market_open, ScreenerConfig
+from engine import run_screen, is_market_open, ScreenerConfig, run_historical_screen
 from datetime import datetime
 import threading
 import time
@@ -118,6 +118,21 @@ def api_screen():
         result = cached_result
     if result is None:
         return jsonify({"success": False, "message": "暂未选股数据", "stocks": []})
+    return jsonify(result)
+
+
+@app.route('/api/history')
+def api_history():
+    date = request.args.get('date', '')
+    if not date:
+        return jsonify({"success": False, "message": "请提供日期参数 ?date=YYYY-MM-DD"})
+    try:
+        from datetime import datetime
+        datetime.strptime(date, '%Y-%m-%d')
+    except:
+        return jsonify({"success": False, "message": "日期格式错误，请使用 YYYY-MM-DD"})
+    
+    result = run_historical_screen(date)
     return jsonify(result)
 
 
