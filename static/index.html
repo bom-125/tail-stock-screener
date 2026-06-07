@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>灏剧洏閫夎偂鍣?/title>
+<style>
+  :root {
+    --bg: #0a0e17;
+    --card: #111827;
+    --border: #1e293b;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --accent: #3b82f6;
+    --green: #22c55e;
+    --red: #ef4444;
+    --yellow: #eab308;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh;
+    display: flex; justify-content: center; padding: 32px 16px;
+  }
+  .container { max-width: 900px; width: 100%; }
+
+  .header {
+    text-align: center; margin-bottom: 32px;
+  }
+  .header h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+  .header p { color: var(--muted); font-size: 14px; margin-top: 4px; }
+
+  .controls {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 24px; margin-bottom: 20px;
+    display: flex; gap: 12px; align-items: end; flex-wrap: wrap;
+  }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--muted); font-weight: 500; }
+  .field input, .field select {
+    background: #0a0e17; border: 1px solid var(--border);
+    color: var(--text); padding: 10px 14px; border-radius: 8px;
+    font-size: 14px; font-family: inherit; outline: none;
+  }
+  .field input:focus { border-color: var(--accent); }
+  
+  .btn {
+    background: var(--accent); color: #fff; border: none;
+    padding: 10px 24px; border-radius: 8px; font-size: 14px;
+    font-weight: 600; cursor: pointer; transition: opacity 0.15s;
+    font-family: inherit;
+  }
+  .btn:hover { opacity: 0.85; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .status {
+    text-align: center; padding: 16px; color: var(--muted);
+    font-size: 13px;
+  }
+  .status.error { color: var(--red); }
+
+  .results-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; overflow: hidden;
+  }
+  .results-header {
+    padding: 16px 20px; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 13px;
+  }
+  .results-count { color: var(--muted); }
+
+  table {
+    width: 100%; border-collapse: collapse;
+  }
+  th {
+    text-align: left; padding: 10px 16px; font-size: 12px;
+    color: var(--muted); font-weight: 500; text-transform: uppercase;
+    letter-spacing: 0.5px; border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 12px 16px; font-size: 14px;
+    border-bottom: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+  }
+  tr:hover { background: #1a2030; }
+  .score-badge {
+    display: inline-block; padding: 2px 10px; border-radius: 20px;
+    font-weight: 700; font-size: 13px;
+  }
+  .score-high { background: #1a3a1a; color: var(--green); }
+  .score-mid { background: #1a2a1a; color: var(--yellow); }
+  .score-low { background: #1a1a2a; color: var(--muted); }
+
+  .tag {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 11px; margin-right: 4px;
+  }
+  .tag-gold { background: #3d2e00; color: var(--yellow); }
+
+  .spinner {
+    display: inline-block; width: 16px; height: 16px;
+    border: 2px solid var(--border); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+    vertical-align: middle; margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .empty {
+    text-align: center; padding: 48px 16px; color: var(--muted);
+  }
+  .empty-icon { font-size: 48px; margin-bottom: 8px; opacity: 0.4; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>馃搱 灏剧洏閫夎偂鍣?/h1>
+    <p>鍩轰簬灏剧洏鏀鹃噺銆佷环鏍肩獊鐮寸瓑鎶€鏈寚鏍囷紝绛涢€夋鏃ユ綔鍔涜偂</p>
+  </div>
+
+  <div class="controls">
+    <div class="field">
+      <label>鐩爣鏃ユ湡</label>
+      <span style="color:#64748b;font-size:14px;padding:10px 0" id="dateLabel">实时行情</span>
+    </div>
+    <div class="field">
+      <label>鏈€浣庤瘎鍒?/label>
+      <select id="scoreInput" style="width:100px">
+        <option value="30">30 - 瀹芥澗</option>
+        <option value="40" selected>40 - 閫備腑</option>
+        <option value="50">50 - 涓ユ牸</option>
+        <option value="60">60 - 绮鹃€?/option>
+      </select>
+    </div>
+    <button class="btn" id="scanBtn" onclick="startScan()">寮€濮嬫壂鎻?/button>
+  </div>
+
+  <div class="status" id="status">杈撳叆鏃ユ湡锛岀偣鍑?寮€濮嬫壂鎻?</div>
+
+  <div class="results-card" id="resultsCard" style="display:none">
+    <div class="results-header">
+      <span>馃搳 鎵弿缁撴灉 鈥?<span id="resultDate"></span></span>
+      <span class="results-count" id="resultCount"></span>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>鎺掑悕</th><th>浠ｇ爜</th><th>鍚嶇О</th><th>缁煎悎璇勫垎</th>
+            <th>鏀剁洏浠?/th><th>鎹㈡墜鐜?/th><th>灏剧洏鎷夊崌</th><th>鏀鹃噺姣?/th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = "/api/scan";
+
+document.getElementById('dateLabel').textContent = new Date().toISOString().split('T')[0];
+
+async function startScan() {
+  var date = document.getElementById("dateInput").value;
+  var minScore = document.getElementById("scoreInput").value;
+  
+  if (!date) return;
+  
+  var btn = document.getElementById("scanBtn");
+  var status = document.getElementById("status");
+  var card = document.getElementById("resultsCard");
+  
+  btn.disabled = true;
+  btn.textContent = "鎵弿涓?..";
+  status.innerHTML = '<span class="spinner"></span> 姝ｅ湪鎵弿鍏ㄥ競鍦鸿偂绁紝棰勮1-3鍒嗛挓...';
+  status.className = "status";
+  card.style.display = "none";
+  
+  var startTime = Date.now();
+  
+  try {
+    var resp = await fetch(API + "?min_score=" + minScore);
+    var data = await resp.json();
+    
+    if (data.error) {
+      status.textContent = "鉂?" + data.error;
+      status.className = "status error";
+    } else if (data.count === 0) {
+      status.innerHTML = "鈿狅笍 鏈壘鍒扮鍚堟潯浠剁殑鑲＄エ锛屽缓璁檷浣庤瘎鍒嗛棬妲?;
+      status.className = "status";
+      card.style.display = "none";
+    } else {
+      status.textContent = "";
+      status.className = "status";
+      renderResults(data);
+    }
+  } catch (e) {
+    status.textContent = "鉂?杩炴帴澶辫触锛岃纭鏈嶅姟鍣ㄥ凡鍚姩";
+    status.className = "status error";
+  }
+  
+  btn.disabled = false;
+  btn.textContent = "寮€濮嬫壂鎻?;
+}
+
+function renderResults(data) {
+  var card = document.getElementById("resultsCard");
+  card.style.display = "block";
+  
+  document.getElementById("resultDate").textContent = data.date;
+  document.getElementById("resultCount").textContent = 
+    data.count + " 鍙?| 鑰楁椂 " + data.elapsed + "s";
+  
+  var tbody = document.getElementById("tableBody");
+  tbody.innerHTML = data.results.map(function(r, i) {
+    var cls = r.score >= 60 ? "score-high" : r.score >= 45 ? "score-mid" : "score-low";
+    var det = r.details || {};
+    return "<tr>" +
+      "<td>" + (i+1) + "</td>" +
+      "<td style='font-weight:600'>" + r.code + "</td>" +
+      "<td>" + r.name + (det["娑ㄥ仠闄勮繎"] ? " <span class='tag tag-gold'>寮哄娍</span>" : "") + "</td>" +
+      "<td><span class='score-badge " + cls + "'>" + r.score + "</span></td>" +
+      "<td>" + (r.close ? r.close.toFixed(2) : "--") + "</td>" +
+      "<td>" + (r.turnover ? r.turnover.toFixed(1) + "%" : "--") + "</td>" +
+      "<td>" + (det["灏剧洏鎷夊崌"] || "--") + "</td>" +
+      "<td>" + (det["鏀鹃噺姣?] || "--") + "</td>" +
+      "</tr>";
+  }).join("");
+}
+
+// Allow Enter to start scan
+document.getElementById("dateInput").addEventListener("keydown", function(e) {
+  if (e.key === "Enter") startScan();
+});
+</script>
+</body>
+</html>
