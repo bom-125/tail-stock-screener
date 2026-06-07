@@ -165,59 +165,59 @@ def score_v5(data):
     yc=data.get("yclose") or data.get("prev_close",0)
     amt=data.get("amt",0); turnover=data.get("turnover",0)
     mktcap=data.get("mktcap",0)
-    if p<=0 or (yc and yc<=0): return 0,{"filter":"Bad data"}
+    if p<=0 or (yc and yc<=0): return 0,{"filter":"数据异常"}
     chg=(p-yc)/yc*100 if yc>0 else 0
     rng=h-l if h and l else 0
     amp=(h-l)/yc*100 if yc>0 and h and l else 0
-    if chg<0: return 0,{"filter":"Decline","chg":round(chg,2)}
-    if chg>=9.5: return 0,{"filter":"Limit up","chg":round(chg,2)}
-    if p<3: return 0,{"filter":"Penny stock"}
+    if chg<0: return 0,{"filter":"下跌股","chg":round(chg,2)}
+    if chg>=9.5: return 0,{"filter":"涨停板","chg":round(chg,2)}
+    if p<3: return 0,{"filter":"低价股<3元"}
     sc=0; dt={"chg":round(chg,2),"amp":round(amp,2),"price":round(p,2)}
 
     # Dim1: Price form (25pts)
-    if 3<=chg<=5: ps=25; dt["price_eval"]="Ideal 3-5%"
-    elif 2<=chg<3: ps=18+(chg-2)*7; dt["price_eval"]="Acceptable"
-    elif 5<chg<=7: ps=25-(chg-5)*6; dt["price_eval"]="High chase risk"
-    elif 0.5<=chg<2: ps=8+chg*5; dt["price_eval"]="Weak"
-    else: ps=max(2,25-(chg-7)*5); dt["price_eval"]="Too high"
-    if amp<=3: ap=0; dt["amp_eval"]="Stable"
-    elif amp<=5: ap=-2; dt["amp_eval"]="Normal"
-    elif amp<=7: ap=-5; dt["amp_eval"]="High"
-    else: ap=-10; dt["amp_eval"]="Very high"
+    if 3<=chg<=5: ps=25; dt["price_eval"]="温和拉升(3-5%)"
+    elif 2<=chg<3: ps=18+(chg-2)*7; dt["price_eval"]="可接受(2-3%)"
+    elif 5<chg<=7: ps=25-(chg-5)*6; dt["price_eval"]="追高风险(5-7%)"
+    elif 0.5<=chg<2: ps=8+chg*5; dt["price_eval"]="偏弱(<2%)"
+    else: ps=max(2,25-(chg-7)*5); dt["price_eval"]="涨幅过大"
+    if amp<=3: ap=0; dt["amp_eval"]="稳定"
+    elif amp<=5: ap=-2; dt["amp_eval"]="正常"
+    elif amp<=7: ap=-5; dt["amp_eval"]="偏大"
+    else: ap=-10; dt["amp_eval"]="过大"
     dt["price_score"]=round(ps+ap,1); sc+=ps+ap
 
     # Dim2: Volume (20pts)
     amt_yi=amt/1e8 if amt else 0
-    if 5<=turnover<=10: ts=10; dt["to_eval"]="Ideal 5-10%"
-    elif 3<=turnover<5: ts=3+turnover*1.4; dt["to_eval"]="Cool"
-    elif 2<=turnover<3: ts=turnover*2; dt["to_eval"]="Cold"
-    elif 10<turnover<=15: ts=10-(turnover-10)*0.5; dt["to_eval"]="Hot"
-    elif turnover>15: ts=max(2,7-(turnover-15)*0.3); dt["to_eval"]="Overheated"
-    else: ts=max(1,turnover*1.5); dt["to_eval"]="Frozen"
+    if 5<=turnover<=10: ts=10; dt["to_eval"]="活跃适中(5-10%)"
+    elif 3<=turnover<5: ts=3+turnover*1.4; dt["to_eval"]="偏冷(3-5%)"
+    elif 2<=turnover<3: ts=turnover*2; dt["to_eval"]="冷门(2-3%)"
+    elif 10<turnover<=15: ts=10-(turnover-10)*0.5; dt["to_eval"]="偏热(10-15%)"
+    elif turnover>15: ts=max(2,7-(turnover-15)*0.3); dt["to_eval"]="过热(>15%)"
+    else: ts=max(1,turnover*1.5); dt["to_eval"]="极冷(<2%)"
     ts=max(1,min(10,ts))
-    if amt_yi>10: ats=10; dt["amt_eval"]="Big money"
-    elif amt_yi>5: ats=8; dt["amt_eval"]="Active"
-    elif amt_yi>2: ats=6; dt["amt_eval"]="Normal"
-    elif amt_yi>1: ats=4; dt["amt_eval"]="Weak"
-    else: ats=2; dt["amt_eval"]="Illiquid"
+    if amt_yi>10: ats=10; dt["amt_eval"]="大资金关注"
+    elif amt_yi>5: ats=8; dt["amt_eval"]="活跃"
+    elif amt_yi>2: ats=6; dt["amt_eval"]="一般"
+    elif amt_yi>1: ats=4; dt["amt_eval"]="偏弱"
+    else: ats=2; dt["amt_eval"]="流动性差"
     vt=data.get("vol_trend",0) or 0
-    if vt>20: vb=3; dt["vol_trend_eval"]="Stepped up"
-    elif vt>10: vb=2; dt["vol_trend_eval"]="Moderate up"
-    elif vt>0: vb=1; dt["vol_trend_eval"]="Slight up"
-    else: vb=0; dt["vol_trend_eval"]="Flat/down"
+    if vt>20: vb=3; dt["vol_trend_eval"]="阶梯放量"
+    elif vt>10: vb=2; dt["vol_trend_eval"]="温和放量"
+    elif vt>0: vb=1; dt["vol_trend_eval"]="微放"
+    else: vb=0; dt["vol_trend_eval"]="持平/缩量"
     dt["vol_score"]=round(ts+ats+vb,1); sc+=ts+ats+vb
 
     # Dim3: Trend MAs (20pts)
     ts2=0; ma5=data.get("ma5"); ma10=data.get("ma10"); ma20=data.get("ma20")
     if ma5 and ma10 and ma20 and all(v>0 for v in [ma5,ma10,ma20]):
-        if ma5>ma10>ma20: ts2+=8; dt["ma_arrange"]="Bull"
-        elif ma5>ma10: ts2+=4; dt["ma_arrange"]="Semi-bull"
-        elif ma5>ma20: ts2+=2; dt["ma_arrange"]="Neutral"
-        else: dt["ma_arrange"]="Bear"
-    else: dt["ma_arrange"]="No data"
-    if p>ma5 if ma5 else False: ts2+=5; dt["above_ma5"]="Yes"
-    elif ma10 and p>ma10: ts2+=3; dt["above_ma5"]="Above MA10"
-    else: dt["above_ma5"]="No"
+        if ma5>ma10>ma20: ts2+=8; dt["ma_arrange"]="多头排列"
+        elif ma5>ma10: ts2+=4; dt["ma_arrange"]="偏多"
+        elif ma5>ma20: ts2+=2; dt["ma_arrange"]="中性"
+        else: dt["ma_arrange"]="空头排列"
+    else: dt["ma_arrange"]="数据不足"
+    if p>ma5 if ma5 else False: ts2+=5; dt["above_ma5"]="是"
+    elif ma10 and p>ma10: ts2+=3; dt["above_ma5"]="站上10日线"
+    else: dt["above_ma5"]="否"
     ms5=data.get("ma5_slope",0) or 0
     ms10=data.get("ma10_slope",0) or 0
     ms20=data.get("ma20_slope",0) or 0
@@ -231,82 +231,82 @@ def score_v5(data):
     dt["ma_dir"]=",".join(dirs)
     if ma5 and ma20 and ma20>0:
         spread=(ma5-ma20)/ma20*100
-        if 2<=spread<=8: ts2+=2; dt["ma_spread"]="Healthy"
-        elif spread>8: dt["ma_spread"]="Over-spread"
-        else: dt["ma_spread"]="Tight"
+        if 2<=spread<=8: ts2+=2; dt["ma_spread"]="健康发散"
+        elif spread>8: dt["ma_spread"]="过度发散"
+        else: dt["ma_spread"]="均线粘合"
     dt["trend_score"]=round(ts2,1); sc+=ts2
 
     # Dim4: K-line form (15pts)
     ks=0; br=data.get("body_ratio",0); us=data.get("upper_shadow",0)
     cp=data.get("close_position",1)
-    if br>=0.6: ks+=6; dt["body_eval"]="Solid"
-    elif br>=0.4: ks+=4; dt["body_eval"]="Moderate"
-    elif br>=0.2: ks+=2; dt["body_eval"]="Thin"
-    else: dt["body_eval"]="Doji"
-    if us<=0.1: ks+=5; dt["shadow_eval"]="Minimal"
-    elif us<=0.2: ks+=3; dt["shadow_eval"]="Short"
-    elif us<=0.3: ks+=1; dt["shadow_eval"]="Normal"
-    else: ks-=2; dt["shadow_eval"]="Long!Caution"
-    if cp>=0.95: ks+=4; dt["close_eval"]="Near high"
-    elif cp>=0.85: ks+=3; dt["close_eval"]="High zone"
-    elif cp>=0.7: ks+=1; dt["close_eval"]="Mid zone"
-    else: ks-=1; dt["close_eval"]="Low zone"
+    if br>=0.6: ks+=6; dt["body_eval"]="实体饱满"
+    elif br>=0.4: ks+=4; dt["body_eval"]="实体适中"
+    elif br>=0.2: ks+=2; dt["body_eval"]="实体偏小"
+    else: dt["body_eval"]="十字星"
+    if us<=0.1: ks+=5; dt["shadow_eval"]="极短(强势)"
+    elif us<=0.2: ks+=3; dt["shadow_eval"]="较短"
+    elif us<=0.3: ks+=1; dt["shadow_eval"]="一般"
+    else: ks-=2; dt["shadow_eval"]="过长!警惕"
+    if cp>=0.95: ks+=4; dt["close_eval"]="光头(强势)"
+    elif cp>=0.85: ks+=3; dt["close_eval"]="高位"
+    elif cp>=0.7: ks+=1; dt["close_eval"]="中位"
+    else: ks-=1; dt["close_eval"]="低位"
     dt["kline_score"]=round(ks,1); sc+=ks
 
     # Dim5: Market cap (10pts)
     mcy=mktcap/1e8 if mktcap else 0
-    if 50<=mcy<=200: mks=10; dt["mkt_eval"]="Golden 50-200B"
-    elif 30<=mcy<50: mks=7; dt["mkt_eval"]="Small"
-    elif 200<mcy<=300: mks=8; dt["mkt_eval"]="Large"
-    elif 20<=mcy<30: mks=4; dt["mkt_eval"]="Micro"
-    elif mcy>300: mks=5; dt["mkt_eval"]="Mega"
-    else: mks=2; dt["mkt_eval"]="Nano"
+    if 50<=mcy<=200: mks=10; dt["mkt_eval"]="黄金区间(50-200亿)"
+    elif 30<=mcy<50: mks=7; dt["mkt_eval"]="偏小(30-50亿)"
+    elif 200<mcy<=300: mks=8; dt["mkt_eval"]="偏大(200-300亿)"
+    elif 20<=mcy<30: mks=4; dt["mkt_eval"]="小盘(20-30亿)"
+    elif mcy>300: mks=5; dt["mkt_eval"]="大盘蓝筹"
+    else: mks=2; dt["mkt_eval"]="微型盘"
     dt["mkt_cap_yi"]=f"{mcy:.0f}" if mcy>0 else "--"
     dt["mkt_score"]=mks; sc+=mks
 
     # Dim6: Technical bonus (10pts)
     tbs=0
-    if data.get("recent_limit_up"): tbs+=5; dt["limit_gene"]="Yes(active)"
-    else: dt["limit_gene"]="No"
+    if data.get("recent_limit_up"): tbs+=5; dt["limit_gene"]="有(股性活跃)"
+    else: dt["limit_gene"]="无"
     h52=data.get("high52",0); l52=data.get("low52",0)
     if h52>0 and l52>0:
         pos52=(p-l52)/(h52-l52)*100 if h52!=l52 else 50
         dt["pos_52w"]=f"{pos52:.0f}%"
-        if pos52<=30: tbs+=3; dt["low_start"]="Yes"
-        elif pos52<=50: tbs+=1; dt["low_start"]="Mid"
-        else: dt["low_start"]="High"
+        if pos52<=30: tbs+=3; dt["low_start"]="是(低位)"
+        elif pos52<=50: tbs+=1; dt["low_start"]="中位"
+        else: dt["low_start"]="高位"
     else: dt["pos_52w"]="--"
-    if chg>2 and (data.get("vol_trend",0) or 0)>10: tbs+=2; dt["vol_price"]="Good"
-    else: dt["vol_price"]="Normal"
+    if chg>2 and (data.get("vol_trend",0) or 0)>10: tbs+=2; dt["vol_price"]="放量上涨"
+    else: dt["vol_price"]="一般"
     dt["tech_score"]=tbs; sc+=tbs
 
     # Dim7: Risk filters (veto)
     risks=[]
-    if us>0.35: risks.append("Long shadow!Distribution")
-    if chg>7: risks.append("Chase high risk")
-    if turnover>20: risks.append("TO too high")
-    if chg>3 and amt_yi<0.5: risks.append("No volume pump")
+    if us>0.35: risks.append("长上影出货")
+    if chg>7: risks.append("追高风险")
+    if turnover>20: risks.append("换手率过高")
+    if chg>3 and amt_yi<0.5: risks.append("无量空涨")
     if h52>0 and l52>0:
         pos=(p-l52)/(h52-l52)*100
-        if pos>80 and (data.get("vol_trend",0) or 0)>15: risks.append("High pos+volume")
-    if p<5 and turnover<1: risks.append("Cold penny")
-    if amp>8: risks.append("Amp too high")
+        if pos>80 and (data.get("vol_trend",0) or 0)>15: risks.append("高位放量")
+    if p<5 and turnover<1: risks.append("冷门低价")
+    if amp>8: risks.append("振幅过大")
     if risks:
         dt["risk"]="|".join(risks)
-        severe=["Long shadow","No volume","High pos+volume"]
+        severe=["Long shadow","No volume","高位放量"]
         if any(any(s in r for s in severe) for r in risks):
             return 0,{"filter":risks[0],"chg":round(chg,2)}
-    else: dt["risk"]="Clean"
+    else: dt["risk"]="无明显风险"
 
     # Total & Advice
     total=min(100,max(0,round(sc,1)))
     dt["total"]=total
-    if total>=80: dt["advice"]="STRONG BUY"; dt["advice_detail"]="Perfect signals. High prob of gap up tomorrow. Enter after open confirmation. Stop loss -3%."; dt["grade"]="A"
-    elif total>=70: dt["advice"]="RECOMMEND"; dt["advice_detail"]="Clear signals. Add to watchlist. Confirm at open then enter with moderate position."; dt["grade"]="B"
-    elif total>=60: dt["advice"]="WATCH"; dt["advice_detail"]="Acceptable with flaws. Light position only. Strict stop loss required."; dt["grade"]="C"
-    elif total>=50: dt["advice"]="HOLD"; dt["advice_detail"]="Weak signals. Multiple dims below ideal. Wait for better setup."; dt["grade"]="D"
-    elif total>=40: dt["advice"]="SKIP"; dt["advice_detail"]="Sub-par. Not actionable. Avoid."; dt["grade"]="E"
-    else: dt["advice"]="AVOID"; dt["advice_detail"]="Too risky. Stay away."; dt["grade"]="F"
+    if total>=80: dt["advice"]="强烈推荐"; dt["advice_detail"]="形态完美，多项指标共振，次日高开概率大。建议开盘确认后择机入场，止损设-3%。"; dt["grade"]="A"
+    elif total>=70: dt["advice"]="推荐关注"; dt["advice_detail"]="信号明确，综合表现优秀。建议加入自选，次日开盘观察确认后适量介入。"; dt["grade"]="B"
+    elif total>=60: dt["advice"]="适当关注"; dt["advice_detail"]="条件基本符合，存在部分瑕疵。可轻仓试探，严格设置止损。"; dt["grade"]="C"
+    elif total>=50: dt["advice"]="一般关注"; dt["advice_detail"]="信号偏弱，多个维度不理想。建议观望不入场，等待更好时机。"; dt["grade"]="D"
+    elif total>=40: dt["advice"]="观望"; dt["advice_detail"]="多项指标不达标，不具备操作价值，不推荐介入。"; dt["grade"]="E"
+    else: dt["advice"]="回避"; dt["advice_detail"]="综合评分过低，风险大于机会，坚决回避。"; dt["grade"]="F"
     return total,dt
 
 def screen(ms=50, topn=50, date_str=None):
@@ -345,7 +345,7 @@ HTML=r'''<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>WeiPan Stock Screener v5</title>
+<title>尾盘选股器 v5 全策略版</title>
 <style>
 :root{
   --bg:#060912;--card:#0d1117;--card2:#131820;
@@ -413,24 +413,24 @@ tr:hover{background:#151c28}
 </head>
 <body>
 <div class="container">
-<div class="header"><h1>Tail-Stock Screener v5</h1><p class="sub">7-Dim AI Scoring | 14:30-15:00 T+1 Swing Trading | A-Share</p></div>
+<div class="header"><h1>尾盘选股器 v5</h1><p class="sub">7维AI评分 | 14:30-15:00尾盘T+1短线套利 | A股全市场</p></div>
 <div class="banner">
-<div><b>Dimensions:</b> <span class="hl">Price</span> | <span class="hl">Volume</span> | <span class="hl">Trend MA</span> | <span class="hl">K-Line</span></div>
-<div><b>Ideal:</b> Gain 3-5% | Amp <=5% | Bull MA | TO 5-10% | MCap 50-200B</div>
-<div><b>Risk:</b> <span class="dg">ST/Delist</span> | <span class="dg">Long Shadow</span> | <span class="dg">No-Vol Pump</span> | <span class="dg">High Pos Dump</span></div>
-<div><b>Bonus:</b> Limit-Up History | Low Start | Vol-Up Rally | Strong vs Market</div>
+<div><b>评分维度：</b> <span class="hl">Price</span> | <span class="hl">Volume</span> | <span class="hl">Trend MA</span> | <span class="hl">K-Line</span></div>
+<div><b>优选条件：</b> Gain 3-5% | Amp <=5% | Bull MA | TO 5-10% | MCap 50-200B</div>
+<div><b>风控排除：</b> <span class="dg">ST/退市</span> | <span class="dg">长上影出货</span> | <span class="dg">无量空涨</span> | <span class="dg">高位放量</span></div>
+<div><b>加分项：</b> 涨停基因 | 低位启动 | 放量上涨 | 独立抗跌</div>
 </div>
 <div class="controls">
-<div class="field"><label>Date</label><input type="date" id="td" style="width:150px"></div>
-<div class="field"><label>Min Score</label><select id="ms" style="width:130px"><option value="40">40 - Relaxed</option><option value="50" selected>50 - Standard</option><option value="55">55 - Strict</option><option value="60">60 - Quality</option><option value="65">65 - Premium</option></select></div>
-<button class="btn" id="btn" onclick="scan()">Scan</button>
-<button class="btn-outline" onclick="setToday()">Today</button>
+<div class="field"><label>交易日期</label><input type="date" id="td" style="width:150px"></div>
+<div class="field"><label>评分门槛</label><select id="ms" style="width:130px"><option value="40">40 - 宽松</option><option value="50" selected>50 - 标准</option><option value="55">55 - 严格</option><option value="60">60 - 优质</option><option value="65">65 - 极品</option></select></div>
+<button class="btn" id="btn" onclick="scan()">开始扫描</button>
+<button class="btn-outline" onclick="setToday()">今日</button>
 <span style="font-size:11px;color:var(--muted);margin-left:8px" id="tip"></span>
 </div>
-<div class="status" id="status"><span style="font-size:13px">Click Scan or Today | Real-time ~30s | Historical ~1-2min</span></div>
+<div class="status" id="status"><span style="font-size:13px">点击「开始扫描」或「今日」| 实时约30秒 | 历史约1-2分钟</span></div>
 <div class="card" id="card" style="display:none">
 <div class="card-h"><b id="rd"></b><span id="rc"></span></div>
-<div class="table-wrap"><table><thead><tr><th>#</th><th>Code</th><th>Name</th><th>Score</th><th>Price</th><th>Chg%</th><th>Amp%</th><th>Amt</th><th>TO%</th><th>MCap</th><th>Trend</th><th>Advice</th><th>Detail</th></tr></thead><tbody id="tb"></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>#</th><th>代码</th><th>名称</th><th>综合分</th><th>现价</th><th>涨幅</th><th>振幅</th><th>成交额</th><th>换手</th><th>市值</th><th>趋势</th><th>操作建议</th><th>详情</th></tr></thead><tbody id="tb"></tbody></table></div>
 </div>
 </div>
 
@@ -447,33 +447,33 @@ async function scan(){
 var ms=document.getElementById("ms").value,td=document.getElementById("td").value;
 var isToday=(td===getLatestTradeDay(new Date()));
 var b=document.getElementById("btn"),s=document.getElementById("status"),c=document.getElementById("card"),tip=document.getElementById("tip");
-b.disabled=true;b.textContent="Scanning...";s.innerHTML="<span class=\"spinner\"></span>Scanning A-Share market...<div class=\"progress-bar\"><div id=\"pb\" style=\"width:5%\"></div></div>";c.style.display="none";tip.textContent="";
+b.disabled=true;b.textContent="扫描中...";s.innerHTML="<span class=\"spinner\"></span>Scanning A-Share market...<div class=\"progress-bar\"><div id=\"pb\" style=\"width:5%\"></div></div>";c.style.display="none";tip.textContent="";
 var url="/api/scan?min_score="+ms;if(!isToday){url+="&date="+td}
 try{
 var resp=await fetch(url,{signal:AbortSignal.timeout(180000)}),d=await resp.json();
-if(d.error){s.textContent="Error: "+d.error}
+if(d.error){s.textContent="错误: "+d.error}
 else if(d.count===0){s.innerHTML="<span style=\"color:var(--orange)\"\>No results. Try lowering min score.</span>"}
 else{s.innerHTML="<span style=\"color:var(--green)\"\>Scan complete</span>";render(d)}
-tip.textContent="Elapsed "+(d.elapsed||0)+"s"}catch(e){s.textContent="Failed: "+e.message;tip.textContent=""}
-b.disabled=false;b.textContent="Scan"}
+tip.textContent="耗时 "+(d.elapsed||0)+"秒"}catch(e){s.textContent="连接失败: "+e.message;tip.textContent=""}
+b.disabled=false;b.textContent="开始扫描"}
 
 function render(d){
 var card=document.getElementById("card");card.style.display="block";
-document.getElementById("rd").textContent="Results | "+d.date;
-document.getElementById("rc").textContent=d.count+" stocks | "+d.elapsed+"s";
+document.getElementById("rd").textContent="扫描结果 | "+d.date;
+document.getElementById("rc").textContent=d.count+" 只 | 耗时"+d.elapsed+"秒";
 var h="";
 d.results.forEach(function(x,i){
 var dt=x.details||{},sc=x.score;
 var scClass,label,labelClass;
-if(sc>=80){scClass="s-A";label="STRONG BUY";labelClass="bg-A"}
-else if(sc>=70){scClass="s-B";label="RECOMMEND";labelClass="bg-B"}
-else if(sc>=60){scClass="s-C";label="WATCH";labelClass="bg-C"}
-else if(sc>=50){scClass="s-D";label="HOLD";labelClass="bg-D"}
-else{scClass="s-E";label="SKIP";labelClass="bg-E"}
+if(sc>=80){scClass="s-A";label="强烈推荐";labelClass="bg-A"}
+else if(sc>=70){scClass="s-B";label="推荐关注";labelClass="bg-B"}
+else if(sc>=60){scClass="s-C";label="适当关注";labelClass="bg-C"}
+else if(sc>=50){scClass="s-D";label="一般关注";labelClass="bg-D"}
+else{scClass="s-E";label="观望";labelClass="bg-E"}
 var chg=x.change_pct||0;
 var chgStr=(chg>=0?"+":"")+chg.toFixed(2)+"%";
 var chgColor=chg>=3?"var(--green)":chg>=0?"var(--accent)":"var(--red)";
-var amtStr=(x.amount/1e8).toFixed(1)+"B";
+var amtStr=(x.amount/1e8).toFixed(1)+"亿";
 var toStr=(x.turnover||0).toFixed(1)+"%";
 var mktStr=dt["mkt_cap_yi"]||"--";
 var trendStr=dt["ma_arrange"]||"--";
@@ -497,25 +497,25 @@ function showDetail(i){
 var x=window["_d"+i],dt=x.details||{};
 var overlay=document.getElementById("modal-overlay"),content=document.getElementById("modal-content");
 var sc=x.score;
-var grade=sc>=80?"A - STRONG BUY":sc>=70?"B - RECOMMEND":sc>=60?"C - WATCH":sc>=50?"D - HOLD":"E - SKIP";
+var grade=sc>=80?"A级 - 强烈推荐":sc>=70?"B级 - 推荐关注":sc>=60?"C级 - 适当关注":sc>=50?"D级 - 一般关注":"E级 - 观望";
 var rows=[
-["Code",x.code],["Name",x.name],["Score",x.score+" ("+grade+")"],
-["Price",(x.price||0).toFixed(2)],["Chg%",(x.change_pct||0).toFixed(2)+"%"],
-["Amp%",(dt["amp"]||0).toFixed(1)+"%"],
-["Price Eval",dt["price_eval"]||"--"],["Amp Eval",dt["amp_eval"]||"--"],
-["TO Eval",dt["to_eval"]||"--"],["Amt Eval",dt["amt_eval"]||"--"],
-["Vol Trend",dt["vol_trend_eval"]||"--"],
-["Body",dt["body_eval"]||"--"],["Shadow",dt["shadow_eval"]||"--"],
-["Close Pos",dt["close_eval"]||"--"],
-["MA Arrange",dt["ma_arrange"]||"--"],["MA Dir",dt["ma_dir"]||"--"],
-["MA Spread",dt["ma_spread"]||"--"],
-["MCap",dt["mkt_cap_yi"]||"--"],["MCap Eval",dt["mkt_eval"]||"--"],
-["Limit Gene",dt["limit_gene"]||"--"],["52W Pos",dt["pos_52w"]||"--"],
-["Low Start",dt["low_start"]||"--"],["Vol-Price",dt["vol_price"]||"--"],
-["Risk",dt["risk"]||"--"]
+["代码",x.code],["名称",x.name],["综合评分",x.score+" ("+grade+")"],
+["现价",(x.price||0).toFixed(2)+"元"],["涨幅",(x.change_pct||0).toFixed(2)+"%"],
+["振幅",(dt["amp"]||0).toFixed(1)+"%"],
+["价格评价",dt["price_eval"]||"--"],["振幅评价",dt["amp_eval"]||"--"],
+["换手评价",dt["to_eval"]||"--"],["量能评价",dt["amt_eval"]||"--"],
+["量能趋势",dt["vol_trend_eval"]||"--"],
+["K线实体",dt["body_eval"]||"--"],["上影线",dt["shadow_eval"]||"--"],
+["收盘位置",dt["close_eval"]||"--"],
+["均线排列",dt["ma_arrange"]||"--"],["均线方向",dt["ma_dir"]||"--"],
+["均线发散",dt["ma_spread"]||"--"],
+["流通市值",dt["mkt_cap_yi"]||"--"],["市值评价",dt["mkt_eval"]||"--"],
+["涨停基因",dt["limit_gene"]||"--"],["52周位置",dt["pos_52w"]||"--"],
+["低位启动",dt["low_start"]||"--"],["价量配合",dt["vol_price"]||"--"],
+["风险提示",dt["risk"]||"--"]
 ];
 var rowHtml=rows.map(function(r){return "<div class=\"row\"><span class=\"label\">"+r[0]+"</span><span class=\"val\">"+r[1]+"</span></div>"}).join("");
-content.innerHTML="<button class=\"close\" onclick=\"document.getElementById("modal-overlay").classList.remove("active")\">&times;</button><h3>"+x.code+" "+x.name+"</h3>"+rowHtml+"<div class=\"advice-box\"><b>Advice:</b><br>"+dt["advice_detail"]+"</div>";
+content.innerHTML="<button class=\"close\" onclick=\"document.getElementById("modal-overlay").classList.remove("active")\">&times;</button><h3>"+x.code+" "+x.name+"</h3>"+rowHtml+"<div class=\"advice-box\"><b>操作建议：</b><br>"+dt["advice_detail"]+"</div>";
 overlay.classList.add("active")}
 
 function closeModal(e){if(e.target===document.getElementById("modal-overlay")){document.getElementById("modal-overlay").classList.remove("active")}}
