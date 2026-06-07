@@ -641,64 +641,93 @@ def deep_score(row, fund_flow, rank_idx, sepa=None):
     }
 
 def run_historical_screen(target_date):
-    """Fast historical screening with concurrent kline fetching + cache"""
+    """Historical screening using Eastmoney kline API (works on Railway)"""
     import concurrent.futures
     t0 = time.time()
     
-    # Check cache first
+    # Cache check
     global _hist_cache
-    cache_key = target_date
-    if cache_key in _hist_cache:
-        print(f"[history] Cache hit for {target_date}")
-        return _hist_cache[cache_key]
+    if target_date in _hist_cache:
+        print(f"[history] Cache hit: {target_date}")
+        return _hist_cache[target_date]
     
-    print(f"[history] Screening {target_date} (concurrent mode)...")
+    print(f"[history] Fetching {target_date} via Eastmoney...")
     
     codes = get_stock_codes()
     if not codes:
         return {"error": "no_stock_list", "stocks": []}
     
-    # Pick 200 diverse stocks
+    # 200 diverse stocks
     step = max(1, len(codes) // 200)
     sample = codes[::step][:250]
     
-    # Parse kline in parallel with ThreadPool
     sess = requests.Session()
     sess.trust_env = False
-    sess.headers.update({"User-Agent":"Mozilla/5.0","Referer":"https://finance.sina.com.cn/"})
+    sess.headers.update({"User-Agent":"Mozilla/5.0","Referer":"https://data.eastmoney.com/"})
     
-    def fetch_one(c):
+    # Calculate start date (3 trading days before target to ensure prev day)
+    from datetime import datetime as dt, timedelta
+    try:
+        target_dt = dt.strptime(target_date, "%Y-%m-%d")
+        start_dt = target_dt - timedelta(days=7)  # 7 calendar days = ~5 trading days
+        start_str = start_dt.strftime("%Y%m%d")
+        end_str = target_dt.strftime("%Y%m%d")
+    except:
+        start_str = target_date.replace("-", "")
+        end_str = start_str
+    
+    def fetch_kline(c):
         try:
-            sid = c["sid"]
-            url = f"https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol={sid}&scale=240&ma=no&datalen=30"
+            market = 0 if c["code"].startswith(("0","3","2")) else 1
+            # Single API call: get 7 calendar days (~5 trading days) including target
+            url = f"https://push2his.eastmoney.com/api/qt/stock/kline/get?secid={market}.{c['code']}&klt=101&fqt=0&beg={start_str}&end={end_str}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57&lmt=10"
             r = sess.get(url, timeout=8)
             if r.status_code != 200:
                 return None
-            klines = json.loads(r.text)
-            dates = [k["day"] for k in klines]
-            if target_date not in dates:
-                return None
-            idx = dates.index(target_date)
-            if idx == 0:
+            data = r.json()
+            klines = data.get("data", {}).get("klines", [])
+            if not klines or len(klines) < 2:
                 return None
             
-            today = klines[idx]
-            yesterday = klines[idx - 1]
-            prev_close = float(yesterday["close"])
-            price = float(today["close"])
-            if prev_close <= 0 or price <= 0:
+            # Find target date and previous trading day
+            target_kl = None
+            prev_kl = None
+            target_str = target_date  # "2026-06-01"
+            
+            for i, k in enumerate(klines):
+                parts = k.split(",")
+                if parts[0] == target_str:
+                    target_kl = parts
+                    if i > 0:
+                        prev_parts = klines[i-1].split(",")
+                        prev_kl = prev_parts
+                    break
+            
+            if not target_kl or not prev_kl:
                 return None
             
-            pct = (price - prev_close) / prev_close * 100
-            high = float(today["high"])
-            low = float(today["low"])
+            open_p = float(target_kl[1])
+            close_p = float(target_kl[2])
+            high = float(target_kl[3])
+            low = float(target_kl[4])
+            vol = float(target_kl[5])
+            amt = float(target_kl[6]) if len(target_kl) > 6 else 0
+            
+            prev_close = float(prev_kl[2])
+            if close_p <= 0 or prev_close <= 0:
+                return None
+            
+            if prev_close <= 0:
+                return None
+            
+            pct = (close_p - prev_close) / prev_close * 100
             amp = (high - low) / prev_close * 100
             
             return {
                 "code": c["code"], "name": c["name"],
-                "open": float(today["open"]), "prev_close": prev_close,
-                "price": price, "high": high, "low": low,
-                "volume": float(today["volume"]), "amount": float(today["volume"]) * price,
+                "open": open_p, "prev_close": prev_close,
+                "price": close_p, "high": high, "low": low,
+                "volume": vol, "amount": amt,
                 "pct_change": round(pct, 2), "amplitude": round(amp, 2),
                 "volume_ratio": 1.0,
             }
@@ -707,10 +736,10 @@ def run_historical_screen(target_date):
     
     rows = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=25) as executor:
-        futures = {executor.submit(fetch_one, c): c for c in sample}
-        done_count = 0
-        for future in concurrent.futures.as_completed(futures, timeout=25):
-            done_count += 1
+        futures = {executor.submit(fetch_kline, c): c for c in sample}
+        done = 0
+        for future in concurrent.futures.as_completed(futures, timeout=30):
+            done += 1
             try:
                 result = future.result(timeout=3)
                 if result:
@@ -718,83 +747,78 @@ def run_historical_screen(target_date):
             except:
                 pass
     
-    print(f"[history] Fetched {len(rows)} valid records from {done_count} stocks in {time.time()-t0:.1f}s")
+    print(f"[history] Got {len(rows)} records from {done} stocks in {time.time()-t0:.1f}s")
     
-    if len(rows) < 10:
+    if len(rows) < 5:
         result = {"success": True, "total_screened": len(rows), "matched": 0,
                    "stocks": [], "has_recommendation": False,
                    "timestamp": target_date, "market_open": True, "is_historical": True}
-        _hist_cache[cache_key] = result
+        if len(rows) > 0:
+            _hist_cache[target_date] = result
         return result
     
     df = pd.DataFrame(rows)
-    total = len(df)
     passed = screen_stocks(df)
     
     if passed.empty:
-        result = {"success": True, "total_screened": int(total), "matched": 0,
+        result = {"success": True, "total_screened": int(len(rows)), "matched": 0,
                    "stocks": [], "has_recommendation": False,
                    "timestamp": target_date, "market_open": True, "is_historical": True}
-        _hist_cache[cache_key] = result
+        _hist_cache[target_date] = result
         return result
     
-    # Quick scoring (skip kline/fund flow for speed, use simplified)
-    passed = passed.head(min(40, len(passed)))
+    passed = passed.head(min(50, len(passed)))
     
     stocks = []
     for idx, (_, row) in enumerate(passed.iterrows()):
         code = row["code"]
-        s = {
+        pct = row["pct_change"]
+        amp = row.get("amplitude", 5)
+        price = row["price"]
+        
+        # Simplified but meaningful scoring
+        trend = min(25, max(5, pct * 4))
+        capital = 8 if row.get("volume", 0) > 1e7 else 5
+        sentiment = max(5, min(15, (10 - amp) * 1.5))
+        technical = min(20, max(5, pct * 2.5 + (10 - amp) * 0.5))
+        valuation = max(5, min(15, 15 - abs(price - 20) / 4))
+        total = round(trend + capital + sentiment + technical + valuation, 1)
+        
+        if total >= 80: tier = "strong"; tier_label = "强烈推荐"
+        elif total >= 60: tier = "good"; tier_label = "可以关注"
+        elif total >= 40: tier = "watch"; tier_label = "一般关注"
+        else: tier = "weak"; tier_label = "风险提示"
+        
+        stocks.append({
             "code": code, "name": row["name"],
-            "price": round(float(row["price"]), 2) if pd.notna(row["price"]) else None,
-            "pct_change": round(float(row["pct_change"]), 2) if pd.notna(row["pct_change"]) else None,
-            "amplitude": round(float(row["amplitude"]), 2) if pd.notna(row.get("amplitude", 0)) else None,
+            "price": round(float(price), 2), "pct_change": round(float(pct), 2),
+            "amplitude": round(float(amp), 2),
             "volume": safe_float(str(row.get("volume", ""))),
             "amount": safe_float(str(row.get("amount", ""))),
-            "enhanced": {
-                "turnover": None, "volume_ratio": row.get("volume_ratio"),
-                "mktcap_yi": None, "total_mcap_yi": None,
-                "pe": None, "pb": None, "momentum": None,
-                "bid_ask": None, "chg_5d": None, "chg_ytd": None, "sector": None,
-            },
-        }
-        # Simplified scoring (no fund flow / kline for speed)
-        # Trend: pct_change
-        trend = min(25, max(5, row["pct_change"] * 4))
-        technical = min(20, max(5, (10 - row.get("amplitude", 8)) * 2))
-        valuation = max(5, min(15, 15 - abs(row["price"] - 20) / 4))
-        total = trend + 7 + 8 + technical + valuation
-        
-        s.update({
-            "total": round(total, 1), "trend": round(trend, 1),
-            "capital": 7, "sentiment": 8, "technical": round(technical, 1),
-            "valuation": round(valuation, 1),
+            "enhanced": {"turnover": None, "volume_ratio": row.get("volume_ratio"),
+                          "mktcap_yi": None, "total_mcap_yi": None, "pe": None,
+                          "pb": None, "momentum": None, "bid_ask": None,
+                          "chg_5d": None, "chg_ytd": None, "sector": None},
+            "total": total, "trend": round(trend,1), "capital": round(capital,1),
+            "sentiment": round(sentiment,1), "technical": round(technical,1),
+            "valuation": round(valuation,1),
             "fund_flow": {"main_net_inflow": 0, "main_net_ratio": 0},
-            "recommendation": "历史回测", "reco_level": "watch",
-            "signals": [f"涨幅{row['pct_change']:.1f}%"],
+            "recommendation": tier_label, "reco_level": tier,
+            "tier": tier, "tier_label": tier_label,
+            "signals": [f"涨幅{pct:.1f}%" if pct > 0 else f"跌幅{abs(pct):.1f}%"],
             "prediction": {"direction": "", "confidence": 0, "signals": []},
             "sell_advice": "", "sell_detail": [], "target_high": None, "target_low": None,
-            "sepa": {"above_ma50": False, "above_ma150": False, "has_limit_up": False},
-            "sepa_score": 0, "max_score": 115,
+            "sepa": {}, "sepa_score": 0,
         })
-        stocks.append(s)
     
     stocks.sort(key=lambda x: x["total"], reverse=True)
-    
-    # Tier all stocks
-    for s in stocks:
-        score = s["total"]
-        if score >= 80: s["tier"] = "strong"; s["tier_label"] = "强烈推荐"
-        elif score >= 60: s["tier"] = "good"; s["tier_label"] = "可以关注"
-        elif score >= 40: s["tier"] = "watch"; s["tier_label"] = "一般关注"
-        else: s["tier"] = "weak"; s["tier_label"] = "风险提示"
     
     strong_count = sum(1 for s in stocks if s["tier"] == "strong")
     good_count = sum(1 for s in stocks if s["tier"] == "good")
     
     result = {
-        "success": True, "total_screened": int(total), "matched": len(stocks),
-        "tiers": {"strong": strong_count, "good": good_count, 
+        "success": True, "total_screened": int(len(rows)), "matched": len(stocks),
+        "tiers": {"strong": strong_count, "good": good_count,
                    "watch": sum(1 for s in stocks if s["tier"]=="watch"),
                    "weak": sum(1 for s in stocks if s["tier"]=="weak")},
         "has_recommendation": strong_count > 0 or good_count > 0,
@@ -802,13 +826,13 @@ def run_historical_screen(target_date):
         "is_historical": True,
     }
     
-    # Cache result (keep last 20 queries)
-    _hist_cache[cache_key] = result
-    if len(_hist_cache) > 20:
+    # Cache
+    _hist_cache[target_date] = result
+    if len(_hist_cache) > 30:
         oldest = min(_hist_cache.keys())
         del _hist_cache[oldest]
     
-    print(f"[history] Done: {len(quality)} picks in {time.time()-t0:.1f}s")
+    print(f"[history] Done: {len(stocks)} stocks ({strong_count} strong) in {time.time()-t0:.1f}s")
     return result
 
 
