@@ -1127,6 +1127,22 @@ def screen(ms=50, topn=50, date_str=None):
             tp_price = round(close * (1 + dtp / 100), 2)
             sl_price = round(close * (1 + dsl / 100), 2)
             
+            # Buy timing
+            if advice == "强烈买入" and market_label == "BULLISH+":
+                buy_timing = "午盘即可买入，趋势极强"
+            elif advice == "强烈买入":
+                buy_timing = "午盘分批建仓，尾盘加满"
+            elif advice == "买入" and market_label == "BULLISH+":
+                buy_timing = "午盘先建半仓，尾盘观察补仓"
+            elif advice == "买入":
+                buy_timing = "建议尾盘14:30后买入"
+            elif advice == "谨慎买入":
+                buy_timing = "尾盘最后15分钟轻仓试探"
+            elif advice == "观望":
+                buy_timing = "不建议买入，继续观察"
+            else:
+                buy_timing = "跳过"
+            
             details = {
                 "chg": round(chg,2), "amp": round(amp_v,2),
                 "rsi": round(rsi6,0), "vol_ratio": round(vr,1),
@@ -1143,6 +1159,7 @@ def screen(ms=50, topn=50, date_str=None):
                 "max_hold": mh, "position_pct": pos_pct,
                 "atr_pct": round(ap_pct,1),
                 "timing_reason": "强趋势+市场配合可满仓" if advice=="强烈买入" else ("趋势健康可标准仓" if advice=="买入" else "信号偏弱可轻仓"),
+                "buy_timing": buy_timing,
                 "total": min(100, max(0, round(score)))
             }
             
