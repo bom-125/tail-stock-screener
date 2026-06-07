@@ -173,6 +173,11 @@ function renderResult(data, isSse) {
   
   document.getElementById('statTotal').textContent = data.total_screened||'--';
   document.getElementById('statMatch').textContent = stocks.length;
+  const recoInfo = [];
+  if (data.strong_buy_count) recoInfo.push('强推'+data.strong_buy_count);
+  if (data.buy_count) recoInfo.push('买入'+data.buy_count);
+  if (data.watch_count) recoInfo.push('关注'+data.watch_count);
+  if (recoInfo.length) document.getElementById('statTime').textContent = recoInfo.join(' | ');
   document.getElementById('statRate').textContent = data.total_screened>0?(stocks.length/data.total_screened*100).toFixed(2)+'%':'--';
   const ts = data.timestamp||'--';
   document.getElementById('statTime').textContent = ts.includes(' ')?ts.split(' ')[1]:ts;
@@ -184,7 +189,7 @@ function renderResult(data, isSse) {
   if(isSse) showToast('📊 已更新 · '+stocks.length+' 只标的');
   
   if(!stocks.length) {
-    c.innerHTML = '<div class="empty"><div class="icon">🔍</div><div class="title">暂无符合条件</div><div class="desc">暂未命中选股策略标的</div></div>';
+    c.innerHTML = '<div class="empty"><div class="icon">💭</div><div class="title">今日无十分推荐</div><div class="desc">筛选出 ' + data.total_screened + ' 只标的，但均未达到推荐标准。建议等待更好机会。</div></div>';
     return;
   }
   

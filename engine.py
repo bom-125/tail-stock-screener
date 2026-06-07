@@ -36,6 +36,10 @@ class ScreenerConfig:
     LIMIT_UP_DAYS = 20
     VOLUME_EXPAND_RATIO = 1.5
     TOP_N = 30
+    # Quality filter: minimum total score for recommendation
+    MIN_TOTAL_SCORE = 60
+    # Recommendation levels that qualify as "strong pick"
+    MIN_RECO_LEVEL = "watch"  # "strong_buy" / "buy" / "watch" / "avoid" 
 
 _stock_cache = {'codes': None, 'time': 0}
 _fund_flow_cache = {}
