@@ -89,7 +89,7 @@ def fetch_real_time_data():
     # === Source 1: Eastmoney batch API (works best on Railway) ===
     try:
         s.headers.update({"User-Agent":"Mozilla/5.0","Referer":"https://data.eastmoney.com/"})
-        url = "https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=6000&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f2,f3,f4,f5,f6,f7,f8,f10,f12,f14,f15,f16,f17,f18,f20"
+        url = "https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=6000&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f14,f15,f16,f17,f18,f20,f21,f100,f115,f152,f184"
         r = s.get(url, timeout=20)
         if r.status_code == 200:
             data = r.json()
@@ -802,7 +802,8 @@ def run_screen():
     # SEPA: fetch kline for MA + limit-up analysis
     top_codes_list = passed.head(min(ScreenerConfig.TOP_N, len(passed)))["code"].tolist()
     kline_data = fetch_kline_batch(top_codes_list, days=60)
-    enriched = enrich_stock_details(top_codes_list)
+    # Enrichment now done via batch API (no separate calls needed)
+    enriched = {}
     
     stocks = []
     for idx, (_, row) in enumerate(passed.head(ScreenerConfig.TOP_N).iterrows()):
