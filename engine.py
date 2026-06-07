@@ -37,7 +37,7 @@ class ScreenerConfig:
     VOLUME_EXPAND_RATIO = 1.5
     TOP_N = 30
     # Quality filter: minimum total score for recommendation
-    MIN_TOTAL_SCORE = 60
+    MIN_TOTAL_SCORE = 40  # Show all, scoring provides tier
     # Recommendation levels that qualify as "strong pick"
     MIN_RECO_LEVEL = "watch"  # "strong_buy" / "buy" / "watch" / "avoid" 
 
@@ -781,15 +781,24 @@ def run_historical_screen(target_date):
     
     stocks.sort(key=lambda x: x["total"], reverse=True)
     
-    # Quality filter
-    cfg = ScreenerConfig()
-    quality = [s for s in stocks if s["total"] >= cfg.MIN_TOTAL_SCORE]
+    # Tier all stocks
+    for s in stocks:
+        score = s["total"]
+        if score >= 80: s["tier"] = "strong"; s["tier_label"] = "强烈推荐"
+        elif score >= 60: s["tier"] = "good"; s["tier_label"] = "可以关注"
+        elif score >= 40: s["tier"] = "watch"; s["tier_label"] = "一般关注"
+        else: s["tier"] = "weak"; s["tier_label"] = "风险提示"
+    
+    strong_count = sum(1 for s in stocks if s["tier"] == "strong")
+    good_count = sum(1 for s in stocks if s["tier"] == "good")
     
     result = {
-        "success": True, "total_screened": int(total), "matched": len(quality),
-        "quality_filtered": len(stocks) - len(quality),
-        "has_recommendation": len(quality) > 0,
-        "stocks": quality, "timestamp": target_date, "market_open": True,
+        "success": True, "total_screened": int(total), "matched": len(stocks),
+        "tiers": {"strong": strong_count, "good": good_count, 
+                   "watch": sum(1 for s in stocks if s["tier"]=="watch"),
+                   "weak": sum(1 for s in stocks if s["tier"]=="weak")},
+        "has_recommendation": strong_count > 0 or good_count > 0,
+        "stocks": stocks, "timestamp": target_date, "market_open": True,
         "is_historical": True,
     }
     

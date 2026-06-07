@@ -217,7 +217,10 @@ function renderResult(data, isSse) {
     const en = s.enhanced||{};
     const pe = en.pe, pb = en.pb, turnover = en.turnover, mktcap = en.mktcap_yi;
     
-    h += '<div class="stock-item" style="animation-delay:'+(i*0.03)+'s">';
+        // Tier-based styling
+    const tier = s.tier || 'watch';
+    const tierLabel = s.tier_label || '';
+    h += '<div class="stock-item tier-'+tier+'" style="animation-delay:'+(i*0.03)+'s">';
     // Top: rank + name + price
     h += '<div class="stock-top">';
     h += '<div style="display:flex;align-items:flex-start;gap:8px;">';
@@ -354,6 +357,12 @@ function renderResult(data, isSse) {
     // Footer
     h += '<div class="stock-footer"><span>振幅 '+fmtNum(s.amplitude,2)+'%</span><span>成交 '+fmtMoney(s.amount)+'</span>'+(sector?'<span>'+sector+'</span>':'')+'</div>';
     h += '</div>';
+    // Add tier divider before group changes
+    if (i === 0) {
+      h += '<div class="tier-divider '+tier+'" style="margin-top:0">' + tierLabel + ' (' + stocks.filter(x=>x.tier===tier).length + '只)</div>';
+    } else if (stocks[i-1] && stocks[i-1].tier !== tier) {
+      h += '<div class="tier-divider '+tier+'">' + tierLabel + ' (' + stocks.filter(x=>x.tier===tier).length + '只)</div>';
+    }
   });
   h += '</div>';
   c.innerHTML = h;
