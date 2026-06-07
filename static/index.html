@@ -1,239 +1,260 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>鐏忓墽娲忛柅澶庡亗閸?/title>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>尾盘选股器 v5.5</title>
 <style>
-  :root {
-    --bg: #0a0e17;
-    --card: #111827;
-    --border: #1e293b;
-    --text: #e2e8f0;
-    --muted: #64748b;
-    --accent: #3b82f6;
-    --green: #22c55e;
-    --red: #ef4444;
-    --yellow: #eab308;
-  }
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
-    background: var(--bg); color: var(--text); min-height: 100vh;
-    display: flex; justify-content: center; padding: 32px 16px;
-  }
-  .container { max-width: 900px; width: 100%; }
+:root{--bg:#060912;--card:#0d1117;--card2:#131820;--border:#1a2332;--text:#c9d1d9;--muted:#6e7681;--accent:#58a6ff;--green:#3fb950;--red:#f85149;--orange:#d29922;--gold:#e3b341;--purple:#a371f7}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;justify-content:center;padding:24px 16px}
+.container{max-width:1200px;width:100%}
+.header{text-align:center;margin-bottom:8px}
+.header h1{font-size:26px;font-weight:800;background:linear-gradient(135deg,#58a6ff,#a371f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.header .sub{color:var(--muted);font-size:12px;margin-top:4px}
+.banner{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin-bottom:12px;font-size:12px;color:var(--muted);line-height:1.7;display:grid;grid-template-columns:1fr 1fr;gap:8px 24px}
+.banner b{color:var(--text)}.banner .hl{color:var(--gold)}.banner .dg{color:var(--red)}
+.controls{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 20px;margin-bottom:10px;display:flex;gap:12px;align-items:end;flex-wrap:wrap}
+.field{display:flex;flex-direction:column;gap:3px}
+.field label{font-size:11px;color:var(--muted);font-weight:500}
+.field input,.field select{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:7px;font-size:13px;font-family:inherit;outline:none}
+.field input:focus,.field select:focus{border-color:var(--accent)}
+.btn{background:linear-gradient(135deg,#1a6ff5,#5b3fd9);color:#fff;border:none;padding:9px 24px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn:hover{opacity:.9}.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--text);padding:9px 18px;border-radius:7px;font-size:13px;cursor:pointer;font-family:inherit}
+.btn-outline:hover{border-color:var(--accent);color:var(--accent)}
+.status{text-align:center;padding:12px;color:var(--muted);font-size:12px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px;display:none}
+.card-h{padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:600}
+.card-h span{color:var(--muted);font-weight:400}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:8px 10px;font-size:10px;color:var(--muted);font-weight:500;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:9px 10px;font-size:12px;border-bottom:1px solid var(--border);white-space:nowrap}
+tr:hover{background:#151c28}
+.score{font-weight:700;font-size:14px}
+.s-A{color:#ff6b6b}.s-B{color:#ff922b}.s-C{color:var(--gold)}.s-D{color:var(--accent)}.s-E{color:var(--muted)}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700}
+.bg-A{background:#2d1515;color:#ff6b6b}.bg-B{background:#2d2010;color:#ff922b}.bg-C{background:#2d2410;color:var(--gold)}.bg-D{background:#10202d;color:var(--accent)}.bg-E{background:#1a1a1a;color:var(--muted)}
+.detail-btn{background:none;border:1px solid var(--border);color:var(--accent);padding:2px 8px;border-radius:5px;font-size:10px;cursor:pointer;font-family:inherit}
+.detail-btn:hover{background:var(--accent);color:#fff}
+.modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:100;justify-content:center;align-items:center;padding:20px}
+.modal-overlay.active{display:flex}
+.modal{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px 24px;max-width:500px;width:100%;max-height:80vh;overflow-y:auto}
+.modal h3{font-size:16px;margin-bottom:12px;color:var(--accent)}
+.modal .row{display:flex;justify-content:space-between;padding:6px 0;font-size:12px;border-bottom:1px solid #ffffff08}
+.modal .row .label{color:var(--muted)}.modal .row .val{font-weight:600}
+.modal .close{float:right;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1}
+.modal .advice-box{background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;line-height:1.6}
+.modal .advice-box b{color:var(--gold)}
+.risk-tag{background:#2d1515;color:var(--red);padding:1px 6px;border-radius:4px;font-size:10px;margin-left:4px}
 
-  .header {
-    text-align: center; margin-bottom: 32px;
-  }
-  .header h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
-  .header p { color: var(--muted); font-size: 14px; margin-top: 4px; }
+#loader-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(6,9,18,.92);z-index:999;flex-direction:column;justify-content:center;align-items:center}
+#loader-overlay.show{display:flex}
+#loader-box{background:var(--card2);border:2px solid var(--accent);border-radius:14px;padding:30px 40px;text-align:center;max-width:500px;width:90%}
+#loader-spinner{display:inline-block;width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin-bottom:16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+#loader-title{font-size:16px;font-weight:600;color:var(--text);margin-bottom:8px}
+#loader-stage{font-size:12px;color:var(--muted);margin-bottom:16px}
+#loader-bar-wrap{width:100%;height:10px;background:#1a2332;border-radius:5px;overflow:hidden}
+#loader-bar{height:100%;width:0%;background:linear-gradient(90deg,#3b82f6,#a371f7);border-radius:5px;transition:width .3s ease}
 
-  .controls {
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: 14px; padding: 24px; margin-bottom: 20px;
-    display: flex; gap: 12px; align-items: end; flex-wrap: wrap;
-  }
-  .field { display: flex; flex-direction: column; gap: 4px; }
-  .field label { font-size: 12px; color: var(--muted); font-weight: 500; }
-  .field input, .field select {
-    background: #0a0e17; border: 1px solid var(--border);
-    color: var(--text); padding: 10px 14px; border-radius: 8px;
-    font-size: 14px; font-family: inherit; outline: none;
-  }
-  .field input:focus { border-color: var(--accent); }
-  
-  .btn {
-    background: var(--accent); color: #fff; border: none;
-    padding: 10px 24px; border-radius: 8px; font-size: 14px;
-    font-weight: 600; cursor: pointer; transition: opacity 0.15s;
-    font-family: inherit;
-  }
-  .btn:hover { opacity: 0.85; }
-  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-  .status {
-    text-align: center; padding: 16px; color: var(--muted);
-    font-size: 13px;
-  }
-  .status.error { color: var(--red); }
-
-  .results-card {
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: 14px; overflow: hidden;
-  }
-  .results-header {
-    padding: 16px 20px; border-bottom: 1px solid var(--border);
-    display: flex; justify-content: space-between; align-items: center;
-    font-size: 13px;
-  }
-  .results-count { color: var(--muted); }
-
-  table {
-    width: 100%; border-collapse: collapse;
-  }
-  th {
-    text-align: left; padding: 10px 16px; font-size: 12px;
-    color: var(--muted); font-weight: 500; text-transform: uppercase;
-    letter-spacing: 0.5px; border-bottom: 1px solid var(--border);
-  }
-  td {
-    padding: 12px 16px; font-size: 14px;
-    border-bottom: 1px solid var(--border);
-    font-variant-numeric: tabular-nums;
-  }
-  tr:hover { background: #1a2030; }
-  .score-badge {
-    display: inline-block; padding: 2px 10px; border-radius: 20px;
-    font-weight: 700; font-size: 13px;
-  }
-  .score-high { background: #1a3a1a; color: var(--green); }
-  .score-mid { background: #1a2a1a; color: var(--yellow); }
-  .score-low { background: #1a1a2a; color: var(--muted); }
-
-  .tag {
-    display: inline-block; padding: 2px 8px; border-radius: 4px;
-    font-size: 11px; margin-right: 4px;
-  }
-  .tag-gold { background: #3d2e00; color: var(--yellow); }
-
-  .spinner {
-    display: inline-block; width: 16px; height: 16px;
-    border: 2px solid var(--border); border-top-color: var(--accent);
-    border-radius: 50%; animation: spin 0.8s linear infinite;
-    vertical-align: middle; margin-right: 8px;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  .empty {
-    text-align: center; padding: 48px 16px; color: var(--muted);
-  }
-  .empty-icon { font-size: 48px; margin-bottom: 8px; opacity: 0.4; }
+@media(max-width:768px){.banner{grid-template-columns:1fr}.controls{flex-direction:column;align-items:stretch}}
 </style>
 </head>
 <body>
 <div class="container">
-  <div class="header">
-    <h1>棣冩惐 鐏忓墽娲忛柅澶庡亗閸?/h1>
-    <p>閸╄桨绨亸鍓ф磸閺€楣冨櫤閵嗕椒鐜弽鑲╃崐閻鐡戦幎鈧張顖涘瘹閺嶅浄绱濈粵娑⑩偓澶嬵偧閺冦儲缍旈崝娑滃亗</p>
-  </div>
 
-  <div class="controls">
-    <div class="field">
-      <label>閻╊喗鐖ｉ弮銉︽埂</label>
-      <span style="color:#64748b;font-size:14px;padding:10px 0" id="dateLabel">瀹炴椂琛屾儏</span>
-    </div>
-    <div class="field">
-      <label>閺堚偓娴ｅ氦鐦庨崚?/label>
-      <select id="scoreInput" style="width:100px">
-        <option value="30">30 - 鐎硅姤婢?/option>
-        <option value="40" selected>40 - 闁倷鑵?/option>
-        <option value="50">50 - 娑撱儲鐗?/option>
-        <option value="60">60 - 缁箖鈧?/option>
-      </select>
-    </div>
-    <button class="btn" id="scanBtn" onclick="startScan()">瀵偓婵澹傞幓?/button>
-  </div>
+<div class="header">
+<h1>尾盘选股器 v5.5</h1>
+<p class="sub">7维AI评分 | 14:30-15:00 T+1短线套利 | A股主板</p>
+</div>
 
-  <div class="status" id="status">鏉堟挸鍙嗛弮銉︽埂閿涘瞼鍋ｉ崙?瀵偓婵澹傞幓?</div>
+<div class="banner">
+<div><b>评分维度：</b> <span class="hl">价格形态</span> | <span class="hl">量能活跃</span> | <span class="hl">趋势均线</span> | <span class="hl">K线形态</span></div>
+<div><b>优选条件：</b>涨幅3%-5% | 振幅5%以内 | 多头排列 | 换手5%-10% | 市值50-200亿</div>
+<div><b>风控排除：</b> <span class="dg">ST/退市/创业/科创</span> | <span class="dg">长上影出货</span> | <span class="dg">无量空涨</span></div>
+<div><b>加分项：</b>涨停基因 | 低位启动 | 放量上涨 | 独立抗跌</div>
+</div>
 
-  <div class="results-card" id="resultsCard" style="display:none">
-    <div class="results-header">
-      <span>棣冩惓 閹殿偅寮跨紒鎾寸亯 閳?<span id="resultDate"></span></span>
-      <span class="results-count" id="resultCount"></span>
-    </div>
-    <div style="overflow-x:auto">
-      <table>
-        <thead>
-          <tr>
-            <th>閹烘帒鎮?/th><th>娴狅絿鐖?/th><th>閸氬秶袨</th><th>缂佺厧鎮庣拠鍕瀻</th>
-            <th>閺€鍓佹磸娴?/th><th>閹广垺澧滈悳?/th><th>鐏忓墽娲忛幏澶婂磳</th><th>閺€楣冨櫤濮?/th>
-          </tr>
-        </thead>
-        <tbody id="tableBody"></tbody>
-      </table>
-    </div>
-  </div>
+<div class="controls">
+<div class="field"><label>交易日期</label><input type="date" id="td" style="width:150px"></div>
+<div class="field"><label>评分门槛</label><select id="ms" style="width:130px"><option value="40">40 - 宽松</option><option value="50" selected>50 - 标准</option><option value="55">55 - 严格</option><option value="60">60 - 优质</option><option value="65">65 - 极品</option></select></div>
+<button class="btn" id="btn" onclick="startScan()">开始扫描</button>
+<button class="btn-outline" onclick="setToday()">今日</button>
+<button class="btn-outline" onclick="testLoader()" style="font-size:11px">测试进度条</button>
+<span style="font-size:11px;color:var(--muted);margin-left:8px" id="tip"></span>
+</div>
+
+<div class="status" id="status">点击「开始扫描」或「今日」按钮 | 实时行情约5秒 | 历史约1-2分钟</div>
+
+<div class="card" id="card">
+<div class="card-h"><b id="rd"></b><span id="rc"></span></div>
+<div class="table-wrap"><table><thead><tr><th>#</th><th>代码</th><th>名称</th><th>综合分</th><th>现价</th><th>涨幅</th><th>振幅</th><th>成交额</th><th>换手</th><th>市值</th><th>趋势</th><th>操作建议</th><th>详情</th></tr></thead><tbody id="tb"></tbody></table></div>
+</div>
+
+</div>
+
+<div id="loader-overlay">
+<div id="loader-box">
+<div id="loader-spinner"></div>
+<div id="loader-title">正在扫描A股全市场...</div>
+<div id="loader-stage">预计约5秒 | 正在获取数据...</div>
+<div id="loader-bar-wrap"><div id="loader-bar"></div></div>
+</div>
+</div>
+
+<div class="modal-overlay" id="modal-overlay" onclick="closeModalClick(event)">
+<div class="modal" id="modal-content"></div>
 </div>
 
 <script>
-const API = "/api/scan";
+function getLatestTradeDay(d){var day=d.getDay();if(day===0){d.setDate(d.getDate()-2)}else if(day===6){d.setDate(d.getDate()-1)}return d.toISOString().split("T")[0]}
+document.getElementById("td").value=getLatestTradeDay(new Date());
+function setToday(){document.getElementById("td").value=getLatestTradeDay(new Date());startScan()}
 
-// date will be updated from API response
+var _store={};
 
-async function startScan() {
-  var date = document.getElementById("dateInput").value;
-  var minScore = document.getElementById("scoreInput").value;
-  
-  if (!date) return;
-  
-  var btn = document.getElementById("scanBtn");
-  var status = document.getElementById("status");
-  var card = document.getElementById("resultsCard");
-  
-  btn.disabled = true;
-  btn.textContent = "閹殿偅寮挎稉?..";
-  status.innerHTML = '<span class="spinner"></span> 濮濓絽婀幍顐ｅ伎閸忋劌绔堕崷楦垮亗缁侇煉绱濇０鍕吀1-3閸掑棝鎸?..';
-  status.className = "status";
-  card.style.display = "none";
-  
-  var startTime = Date.now();
-  
-  try {
-    var resp = await fetch(API + "?min_score=" + minScore);
-    var data = await resp.json();
-    
-    if (data.error) {
-      status.textContent = "閴?" + data.error;
-      status.className = "status error";
-    } else if (data.count === 0) {
-      status.innerHTML = "閳跨媴绗?閺堫亝澹橀崚鎵儊閸氬牊娼禒鍓佹畱閼诧紕銈ㄩ敍灞界紦鐠侇噣妾锋担搴ょ槑閸掑棝妫Σ?;
-      status.className = "status";
-      card.style.display = "none";
-    } else {
-      status.textContent = "";
-      status.className = "status";
-      renderResults(data);
-    }
-  } catch (e) {
-    status.textContent = "閴?鏉╃偞甯存径杈Е閿涘矁顕涵顔款吇閺堝秴濮熼崳銊ュ嚒閸氼垰濮?;
-    status.className = "status error";
+function testLoader(){
+  var ov=document.getElementById("loader-overlay");
+  var bar=document.getElementById("loader-bar");
+  var stage=document.getElementById("loader-stage");
+  ov.classList.add("show");bar.style.width="0%";stage.textContent="测试进度条...";
+  var w=0;
+  var t=setInterval(function(){
+    w+=4;if(w>=100){w=100;clearInterval(t);setTimeout(function(){ov.classList.remove("show")},600)}
+    bar.style.width=w+"%";stage.textContent="进度 "+w+"%";
+  },120);
+}
+
+function startScan(){
+  var ms=document.getElementById("ms").value;
+  var td=document.getElementById("td").value;
+  var isToday=(td===getLatestTradeDay(new Date()));
+  var btn=document.getElementById("btn");
+  var tip=document.getElementById("tip");
+  var status=document.getElementById("status");
+  var card=document.getElementById("card");
+  var ov=document.getElementById("loader-overlay");
+  var bar=document.getElementById("loader-bar");
+  var ltitle=document.getElementById("loader-title");
+  var lstage=document.getElementById("loader-stage");
+
+  btn.disabled=true;btn.textContent="扫描中...";
+  card.style.display="none";tip.textContent="";
+  status.textContent="";
+
+  bar.style.width="0%";
+  ltitle.textContent="正在扫描A股全市场...";
+  lstage.textContent="预计"+(isToday?"约5秒":"约1-2分钟")+" | 获取数据中...";
+  ov.classList.add("show");
+
+  var elapsed=0;
+  var stages=["获取A股列表...","拉取实时行情...","逐只评分计算...","排序筛选...","即将完成..."];
+  var ptimer=setInterval(function(){
+    elapsed+=0.3;
+    var pct=Math.min(92, elapsed/(isToday?5:90)*100);
+    bar.style.width=pct+"%";
+    var si=Math.min(4, Math.floor(elapsed/(isToday?1.5:25)));
+    lstage.textContent="预计"+(isToday?"约5秒":"约1-2分钟")+" | "+stages[si];
+  },300);
+
+  var url="/api/scan?min_score="+ms;
+  if(!isToday){url+="&date="+td}
+
+  var xhr=new XMLHttpRequest();
+  xhr.open("GET", url, true);
+  xhr.timeout=180000;
+  xhr.onload=function(){
+    clearInterval(ptimer);
+    bar.style.width="100%";
+    setTimeout(function(){ov.classList.remove("show")},400);
+    try{
+      var d=JSON.parse(xhr.responseText);
+      if(d.error){status.innerHTML='<span style="color:var(--red)">错误: '+d.error+'</span>'}
+      else if(d.count===0){status.innerHTML='<span style="color:var(--orange)">无符合条件的标的</span>'}
+      else{status.innerHTML='<span style="color:var(--green)">扫描完成! '+d.count+' 只标的</span>';renderTable(d)}
+      tip.textContent="耗时 "+d.elapsed+"秒";
+    }catch(e){status.innerHTML='<span style="color:var(--red)">解析失败</span>'}
+    btn.disabled=false;btn.textContent="开始扫描";
+  };
+  xhr.onerror=function(){clearInterval(ptimer);ov.classList.remove("show");status.innerHTML='<span style="color:var(--red)">连接失败</span>';btn.disabled=false;btn.textContent="开始扫描"};
+  xhr.ontimeout=function(){clearInterval(ptimer);ov.classList.remove("show");status.innerHTML='<span style="color:var(--red)">请求超时</span>';btn.disabled=false;btn.textContent="开始扫描"};
+  xhr.send();
+}
+
+function renderTable(d){
+  var card=document.getElementById("card");card.style.display="block";
+  document.getElementById("rd").textContent="结果 | "+d.date;
+  document.getElementById("rc").textContent=d.count+" 只 | "+d.elapsed+"秒";
+  var h="";
+  for(var i=0;i<d.results.length;i++){
+    var x=d.results[i],dt=x.details||{},sc=x.score;
+    var scClass=sc>=80?"s-A":sc>=70?"s-B":sc>=60?"s-C":sc>=50?"s-D":"s-E";
+    var label=sc>=80?"强烈推荐":sc>=70?"推荐关注":sc>=60?"适当关注":sc>=50?"一般关注":"观望";
+    var lc=sc>=80?"bg-A":sc>=70?"bg-B":sc>=60?"bg-C":sc>=50?"bg-D":"bg-E";
+    var chg=x.change_pct||0;
+    var chgStr=(chg>=0?"+":"")+chg.toFixed(2)+"%";
+    var chgColor=chg>=3?"var(--green)":chg>=0?"var(--accent)":"var(--red)";
+    _store[i]=x;
+    h+="<tr><td>"+(i+1)+"</td>";
+    h+="<td style='font-weight:600;color:var(--accent)'>"+x.code+"</td>";
+    h+="<td>"+x.name+"</td>";
+    h+="<td><span class='score "+scClass+"'>"+x.score+"</span></td>";
+    h+="<td>"+(x.price||0).toFixed(2)+"</td>";
+    h+="<td style='color:"+chgColor+";font-weight:600'>"+chgStr+"</td>";
+    h+="<td>"+(dt["amp"]||0).toFixed(1)+"%</td>";
+    h+="<td>"+((x.amount||0)/1e8).toFixed(1)+"亿</td>";
+    h+="<td>"+(x.turnover||0).toFixed(1)+"%</td>";
+    h+="<td>"+(dt["mkt_cap_yi"]||"--")+"</td>";
+    h+="<td style='font-size:11px'>"+(dt["ma_arrange"]||"--")+"</td>";
+    h+="<td><span class='badge "+lc+"'>"+label+"</span></td>";
+    h+="<td><button class='detail-btn' onclick='showDetail("+i+")'>+</button></td></tr>";
   }
-  
-  btn.disabled = false;
-  btn.textContent = "瀵偓婵澹傞幓?;
+  document.getElementById("tb").innerHTML=h;
 }
 
-function renderResults(data) {
-  var card = document.getElementById("resultsCard");
-  card.style.display = "block";
-  
-  document.getElementById("resultDate").textContent = data.date;
-  document.getElementById("resultCount").textContent = 
-    data.count + " 閸?| 閼版妞?" + data.elapsed + "s";
-  
-  var tbody = document.getElementById("tableBody");
-  tbody.innerHTML = data.results.map(function(r, i) {
-    var cls = r.score >= 60 ? "score-high" : r.score >= 45 ? "score-mid" : "score-low";
-    var det = r.details || {};
-    return "<tr>" +
-      "<td>" + (i+1) + "</td>" +
-      "<td style='font-weight:600'>" + r.code + "</td>" +
-      "<td>" + r.name + (det["濞戙劌浠犻梽鍕箮"] ? " <span class='tag tag-gold'>瀵搫濞?/span>" : "") + "</td>" +
-      "<td><span class='score-badge " + cls + "'>" + r.score + "</span></td>" +
-      "<td>" + (r.close ? r.close.toFixed(2) : "--") + "</td>" +
-      "<td>" + (r.turnover ? r.turnover.toFixed(1) + "%" : "--") + "</td>" +
-      "<td>" + (det["鐏忓墽娲忛幏澶婂磳"] || "--") + "</td>" +
-      "<td>" + (det["閺€楣冨櫤濮?] || "--") + "</td>" +
-      "</tr>";
-  }).join("");
+function showDetail(i){
+  var x=_store[i],dt=x.details||{};
+  var sc=x.score;
+  var grade=sc>=80?"A - 强烈推荐":sc>=70?"B - 推荐关注":sc>=60?"C - 适当关注":sc>=50?"D - 一般关注":"E - 观望";
+  var rows=[];
+  rows.push(["代码",x.code]);rows.push(["名称",x.name]);
+  rows.push(["综合评分",x.score+" ("+grade+")"]);
+  rows.push(["现价",(x.price||0).toFixed(2)+"元"]);
+  rows.push(["涨幅",(x.change_pct||0).toFixed(2)+"%"]);
+  rows.push(["振幅",(dt["amp"]||0).toFixed(1)+"%"]);
+  rows.push(["价格评价",dt["price_eval"]||"--"]);
+  rows.push(["振幅评价",dt["amp_eval"]||"--"]);
+  rows.push(["换手评价",dt["to_eval"]||"--"]);
+  rows.push(["量能评价",dt["amt_eval"]||"--"]);
+  rows.push(["量能趋势",dt["vol_trend_eval"]||"--"]);
+  rows.push(["K线实体",dt["body_eval"]||"--"]);
+  rows.push(["上影线",dt["shadow_eval"]||"--"]);
+  rows.push(["收盘位置",dt["close_eval"]||"--"]);
+  rows.push(["均线排列",dt["ma_arrange"]||"--"]);
+  rows.push(["均线方向",dt["ma_dir"]||"--"]);
+  rows.push(["均线发散",dt["ma_spread"]||"--"]);
+  rows.push(["流通市值",dt["mkt_cap_yi"]||"--"]);
+  rows.push(["市值评价",dt["mkt_eval"]||"--"]);
+  rows.push(["涨停基因",dt["limit_gene"]||"--"]);
+  rows.push(["52周位置",dt["pos_52w"]||"--"]);
+  rows.push(["低位启动",dt["low_start"]||"--"]);
+  rows.push(["价量配合",dt["vol_price"]||"--"]);
+  rows.push(["风险提示",dt["risk"]||"--"]);
+  var rh="";
+  for(var j=0;j<rows.length;j++){
+    rh+='<div class="row"><span class="label">'+rows[j][0]+'</span><span class="val">'+rows[j][1]+'</span></div>';
+  }
+  var content=document.getElementById("modal-content");
+  content.innerHTML='<button class="close" onclick="closeModal()">&times;</button><h3>'+x.code+' '+x.name+'</h3>'+rh+'<div class="advice-box"><b>操作建议：</b><br>'+dt["advice_detail"]+'</div>';
+  document.getElementById("modal-overlay").classList.add("active");
 }
 
-// Allow Enter to start scan
-document.getElementById("dateInput").addEventListener("keydown", function(e) {
-  if (e.key === "Enter") startScan();
-});
+function closeModal(){document.getElementById("modal-overlay").classList.remove("active")}
+function closeModalClick(e){if(e.target===document.getElementById("modal-overlay"))closeModal()}
+document.addEventListener("keydown",function(e){if(e.key==="Escape")closeModal()});
 </script>
 </body>
 </html>

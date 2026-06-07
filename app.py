@@ -353,232 +353,17 @@ def screen(ms=50, topn=50, date_str=None):
         results.sort(key=lambda x:x["score"],reverse=True)
         return results[:topn]
 
-HTML=r'''<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>尾盘选股器 v5 全策略版</title>
-<style>
-:root{
-  --bg:#060912;--card:#0d1117;--card2:#131820;
-  --border:#1a2332;--text:#c9d1d9;--muted:#6e7681;
-  --accent:#58a6ff;--green:#3fb950;--red:#f85149;
-  --orange:#d29922;--gold:#e3b341;--purple:#a371f7;
-}
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;justify-content:center;padding:24px 16px;background-image:radial-gradient(ellipse at 50% 0%,#0d1525 0%,var(--bg) 70%)}
-.container{max-width:1200px;width:100%}
-.header{text-align:center;margin-bottom:8px}
-.header h1{font-size:26px;font-weight:800;letter-spacing:1px;background:linear-gradient(135deg,#58a6ff,#a371f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.header .sub{color:var(--muted);font-size:12px;margin-top:4px}
-.banner{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin-bottom:12px;font-size:12px;color:var(--muted);line-height:1.7;display:grid;grid-template-columns:1fr 1fr;gap:8px 24px}
-.banner b{color:var(--text)}
-.banner .hl{color:var(--gold)}
-.banner .dg{color:var(--red)}
-.controls{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 20px;margin-bottom:10px;display:flex;gap:12px;align-items:end;flex-wrap:wrap}
-.field{display:flex;flex-direction:column;gap:3px}
-.field label{font-size:11px;color:var(--muted);font-weight:500}
-.field input,.field select{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:7px;font-size:13px;font-family:inherit;outline:none;transition:border-color .2s}
-.field input:focus,.field select:focus{border-color:var(--accent)}
-.field input[type="date"]{color-scheme:dark}
-.btn{background:linear-gradient(135deg,#1a6ff5,#5b3fd9);color:#fff;border:none;padding:9px 24px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:opacity .2s,transform .1s;letter-spacing:.5px}
-.btn:hover{opacity:.9;transform:translateY(-1px)}
-.btn:disabled{opacity:.4;transform:none;cursor:not-allowed}
-.btn-outline{background:transparent;border:1px solid var(--border);color:var(--text);padding:9px 18px;border-radius:7px;font-size:13px;cursor:pointer;font-family:inherit;transition:.2s}
-.btn-outline:hover{border-color:var(--accent);color:var(--accent)}
-.status{text-align:center;padding:12px;color:var(--muted);font-size:12px}
-.spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:6px}
-@keyframes spin{to{transform:rotate(360deg)}}
-#loader-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(6,9,18,.9);z-index:999;justify-content:center;align-items:center;flex-direction:column}#loader-overlay.show{display:flex}
-.status-text{font-size:13px;margin-bottom:2px}.stage-text{font-size:11px;color:var(--muted);margin-top:4px;animation:pulse 1.5s ease infinite}@keyframes pulse{0%,100%{opacity:.6}50%{opacity:1}}
-.progress-bar{width:100%;height:6px;background:#1a2332;border-radius:4px;margin-top:10px;overflow:hidden;box-shadow:inset 0 1px 3px rgba(0,0,0,.3)}
-.progress-bar div{height:100%;background:linear-gradient(90deg,#3b82f6,#a371f7);border-radius:4px;transition:width .4s ease;box-shadow:0 0 10px rgba(88,166,255,.3)}
-.card{background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px}
-.card-h{padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:600}
-.card-h span{color:var(--muted);font-weight:400}
-.table-wrap{overflow-x:auto}
-table{width:100%;border-collapse:collapse}
-th{text-align:left;padding:8px 10px;font-size:10px;color:var(--muted);font-weight:500;text-transform:uppercase;border-bottom:1px solid var(--border);white-space:nowrap;letter-spacing:.3px}
-td{padding:9px 10px;font-size:12px;border-bottom:1px solid var(--border);white-space:nowrap}
-tr:hover{background:#151c28}
-.score{font-weight:700;font-size:14px}
-.s-A{color:#ff6b6b}.s-B{color:#ff922b}.s-C{color:var(--gold)}
-.s-D{color:var(--accent)}.s-E{color:var(--muted)}.s-F{color:#444}
-.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-right:4px;letter-spacing:.3px}
-.bg-A{background:#2d1515;color:#ff6b6b}.bg-B{background:#2d2010;color:#ff922b}
-.bg-C{background:#2d2410;color:var(--gold)}.bg-D{background:#10202d;color:var(--accent)}
-.bg-E{background:#1a1a1a;color:var(--muted)}
-.detail-btn{background:none;border:1px solid var(--border);color:var(--accent);padding:2px 8px;border-radius:5px;font-size:10px;cursor:pointer;font-family:inherit;transition:.2s}
-.detail-btn:hover{background:var(--accent);color:#fff}
-.modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:100;justify-content:center;align-items:center;padding:20px}
-.modal-overlay.active{display:flex}
-.modal{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px 24px;max-width:500px;width:100%;max-height:80vh;overflow-y:auto}
-.modal h3{font-size:16px;margin-bottom:12px;color:var(--accent)}
-.modal .row{display:flex;justify-content:space-between;padding:6px 0;font-size:12px;border-bottom:1px solid #ffffff08}
-.modal .row .label{color:var(--muted)}
-.modal .row .val{font-weight:600}
-.modal .close{float:right;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1}
-.modal .advice-box{background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;line-height:1.6}
-.modal .advice-box b{color:var(--gold)}
-.risk-tag{background:#2d1515;color:var(--red);padding:1px 6px;border-radius:4px;font-size:10px;margin-left:4px}
-.no-risk{color:var(--green);font-size:10px}
-@media(max-width:768px){.banner{grid-template-columns:1fr}.controls{flex-direction:column;align-items:stretch}.field input,.field select{width:100%}th{font-size:9px}td{font-size:11px}}
-</style>
-</head>
-<body>
-<div class="container">
-<div class="header"><h1>尾盘选股器 v5.4</h1><p class="sub">7维AI评分 | 14:30-15:00尾盘T+1短线套利 | A股全市场</p></div>
-<div class="banner">
-<div><b>评分维度：</b> <span class="hl">Price</span> | <span class="hl">Volume</span> | <span class="hl">Trend MA</span> | <span class="hl">K-Line</span></div>
-<div><b>优选条件：</b> Gain 3-5% | Amp <=5% | Bull MA | TO 5-10% | MCap 50-200B</div>
-<div><b>风控排除：</b> <span class="dg">ST/退市/创业板/科创板</span> | <span class="dg">长上影出货</span> | <span class="dg">无量空涨</span> | <span class="dg">高位放量</span></div>
-<div><b>加分项：</b> 涨停基因 | 低位启动 | 放量上涨 | 独立抗跌</div>
-</div>
-<div class="controls">
-<div class="field"><label>交易日期</label><input type="date" id="td" style="width:150px"></div>
-<div class="field"><label>评分门槛</label><select id="ms" style="width:130px"><option value="40">40 - 宽松</option><option value="50" selected>50 - 标准</option><option value="55">55 - 严格</option><option value="60">60 - 优质</option><option value="65">65 - 极品</option></select></div>
-<button class="btn" id="btn" onclick="scan()">🔍 开始扫描</button>
-<button class="btn-outline" onclick="testLoader()" style="font-size:11px">🧪 测试进度条</button>
-<button class="btn-outline" onclick="setToday()">📌 今日</button>
-<span style="font-size:11px;color:var(--muted);margin-left:8px" id="tip"></span>
-</div>
-<div id="loader-overlay"><div id="loader" style="background:var(--card2);border:2px solid var(--accent);border-radius:14px;padding:30px 40px;text-align:center;max-width:500px;width:90%;box-shadow:0 0 40px rgba(88,166,255,.15)">
-<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:10px">
-<span class="spinner"></span>
-<span style="font-size:14px;font-weight:600;color:var(--text)" id="loader-title">正在扫描A股全市场...</span>
-</div>
-<div style="font-size:11px;color:var(--muted);margin-bottom:12px" id="loader-stage">预计约30秒 | 正在获取A股列表...</div>
-<div style="width:100%;height:8px;background:#1a2332;border-radius:4px;overflow:hidden;box-shadow:inset 0 1px 3px rgba(0,0,0,.3)">
-<div id="pb" style="height:100%;width:0%;background:linear-gradient(90deg,#3b82f6,#a371f7);border-radius:4px;transition:width .3s ease;box-shadow:0 0 12px rgba(88,166,255,.4)"></div>
-</div>
-</div></div>
-<div class="status" id="status"><span style="font-size:13px">点击「开始扫描」或「今日」| 实时约30秒 | 历史约1-2分钟</span></div>
-<div class="card" id="card" style="display:none">
-<div class="card-h"><b id="rd"></b><span id="rc"></span></div>
-<div class="table-wrap"><table><thead><tr><th>#</th><th>代码</th><th>名称</th><th>综合分</th><th>现价</th><th>涨幅</th><th>振幅</th><th>成交额</th><th>换手</th><th>市值</th><th>趋势</th><th>操作建议</th><th>详情</th></tr></thead><tbody id="tb"></tbody></table></div>
-</div>
-</div>
+def _load_html():
+    p=os.path.join(os.path.dirname(os.path.abspath(__file__)),"static","index.html")
+    with open(p,"r",encoding="utf-8") as f:
+        return f.read()
+HTML_CACHE=None
 
-<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
-<div class="modal" id="modal-content"></div>
-</div>
-
-<script>
-function getLatestTradeDay(d){var day=d.getDay();if(day===0){d.setDate(d.getDate()-2)}else if(day===6){d.setDate(d.getDate()-1)}return d.toISOString().split("T")[0]}
-document.getElementById("td").value=getLatestTradeDay(new Date());
-function setToday(){var d=new Date();document.getElementById("td").value=getLatestTradeDay(d);scan()}
-
-function testLoader(){
-var overlay=document.getElementById("loader-overlay"),pb=document.getElementById("pb"),ls=document.getElementById("loader-stage");
-overlay.classList.add("show");pb.style.width="0%";ls.textContent="测试加载效果中...";
-var w=0;var t=setInterval(function(){w+=5;if(w>=100){w=100;clearInterval(t);setTimeout(function(){overlay.classList.remove("show")},500)}pb.style.width=w+"%";ls.textContent="加载进度 "+w+"%"},150);
-}
-
-async function scan(){
-var ms=document.getElementById("ms").value,td=document.getElementById("td").value;
-var isToday=(td===getLatestTradeDay(new Date()));
-var b=document.getElementById("btn"),s=document.getElementById("status"),c=document.getElementById("card"),tip=document.getElementById("tip");
-var overlay=document.getElementById("loader-overlay"),loader=document.getElementById("loader"),lt=document.getElementById("loader-title"),ls=document.getElementById("loader-stage");
-
-b.disabled=true;b.textContent="扫描中...";c.style.display="none";tip.textContent="";
-s.style.display="none";overlay.classList.add("show");
-var estTime=isToday?"约30秒":"约1-2分钟";
-lt.textContent="正在扫描A股全市场...";
-ls.textContent="预计"+estTime+" | 正在获取A股列表...";
-var pb=document.getElementById("pb");pb.style.width="0%";
-
-var url="/api/scan?min_score="+ms;if(!isToday){url+="&date="+td}
-
-await new Promise(function(r){setTimeout(r,100)});
-
-var elapsed=0;
-var stages=["正在获取A股列表...","正在拉取实时行情...","正在逐只评分计算...","正在排序筛选...","即将完成..."];
-var ptimer=setInterval(function(){
-elapsed+=0.3;
-var pct=Math.min(92,elapsed/(isToday?30:90)*100);
-pb.style.width=pct+"%";
-var si=Math.min(stages.length-1,Math.floor(elapsed/(isToday?8:25)));
-ls.textContent="预计"+estTime+" | "+stages[si];
-},300);
-
-try{
-var resp=await fetch(url,{signal:AbortSignal.timeout(180000)}),d=await resp.json();
-clearInterval(ptimer);
-pb.style.width="100%";overlay.classList.remove("show");s.style.display="block";
-if(d.error){s.innerHTML="<span style=\"color:var(--red)\">错误: "+d.error+"</span>"}
-else if(d.count===0){s.innerHTML="<span style=\"color:var(--orange)\">无符合条件的标的，请降低评分门槛重试</span>"}
-else{s.innerHTML="<span style=\"color:var(--green)\">扫描完成，共发现 "+d.count+" 只标的</span>";render(d)}
-tip.textContent="耗时 "+(d.elapsed||0)+"秒 | "+d.mode}catch(e){
-clearInterval(ptimer);
-overlay.classList.remove("show");s.style.display="block";
-s.innerHTML="<span style=\"color:var(--red)\">连接失败: "+e.message+"</span>";tip.textContent=""}
-b.disabled=false;b.textContent="开始扫描"}
-function render(d){
-var card=document.getElementById("card");card.style.display="block";
-document.getElementById("rd").textContent="结果 | "+d.date;
-document.getElementById("rc").textContent=d.count+" 只 | 耗时"+d.elapsed+"秒";
-var h="";
-d.results.forEach(function(x,i){
-else if(sc>=70){scClass="s-B";label="推荐关注";labelClass="bg-B"}
-else if(sc>=60){scClass="s-C";label="适当关注";labelClass="bg-C"}
-else if(sc>=50){scClass="s-D";label="一般关注";labelClass="bg-D"}
-else{scClass="s-E";label="观望";labelClass="bg-E"}
-var chg=x.change_pct||0;
-var chgStr=(chg>=0?"+":"")+chg.toFixed(2)+"%";
-var chgColor=chg>=3?"var(--green)":chg>=0?"var(--accent)":"var(--red)";
-var amtStr=(x.amount/1e8).toFixed(1)+"亿";
-var toStr=(x.turnover||0).toFixed(1)+"%";
-var mktStr=dt["mkt_cap_yi"]||"--";
-var trendStr=dt["ma_arrange"]||"--";
-var riskStr=dt["risk"]||"";var hasRisk=riskStr&&riskStr!=="Clean";
-window["_d"+i]=x;
-h+="<tr><td>"+(i+1)+"</td>";
-h+="<td style="font-weight:600;color:var(--accent)">"+x.code+"</td>";
-h+="<td>"+x.name+"</td>";
-h+="<td><span class="score "+scClass+"">"+x.score+"</span></td>";
-h+="<td>"+(x.price||0).toFixed(2)+"</td>";
-h+="<td style="color:"+chgColor+";font-weight:600">"+chgStr+"</td>";
-h+="<td>"+(dt["amp"]||0).toFixed(1)+"%</td>";
-h+="<td>"+amtStr+"</td><td>"+toStr+"</td><td>"+mktStr+"</td>";
-h+="<td style="font-size:11px">"+trendStr+"</td>";
-h+="<td style="max-width:160px;font-size:11px"><span class="badge "+labelClass+"">"+label+"</span>";
-if(hasRisk){h+="<span class="risk-tag">!</span>"}h+="</td>";
-h+="<td><button class="detail-btn" onclick="showDetail("+i+")">+</button></td></tr>"});
-document.getElementById("tb").innerHTML=h}
-
-function showDetail(i){
-var x=window["_d"+i],dt=x.details||{};
-var overlay=document.getElementById("modal-overlay"),content=document.getElementById("modal-content");
-var sc=x.score;
-var grade=sc>=80?"A级 - 强烈推荐":sc>=70?"B级 - 推荐关注":sc>=60?"C级 - 适当关注":sc>=50?"D级 - 一般关注":"E级 - 观望";
-var rows=[
-["代码",x.code],["名称",x.name],["综合评分",x.score+" ("+grade+")"],
-["现价",(x.price||0).toFixed(2)+"元"],["涨幅",(x.change_pct||0).toFixed(2)+"%"],
-["振幅",(dt["amp"]||0).toFixed(1)+"%"],
-["价格评价",dt["price_eval"]||"--"],["振幅评价",dt["amp_eval"]||"--"],
-["换手评价",dt["to_eval"]||"--"],["量能评价",dt["amt_eval"]||"--"],
-["量能趋势",dt["vol_trend_eval"]||"--"],
-["K线实体",dt["body_eval"]||"--"],["上影线",dt["shadow_eval"]||"--"],
-["收盘位置",dt["close_eval"]||"--"],
-["均线排列",dt["ma_arrange"]||"--"],["均线方向",dt["ma_dir"]||"--"],
-["均线发散",dt["ma_spread"]||"--"],
-["流通市值",dt["mkt_cap_yi"]||"--"],["市值评价",dt["mkt_eval"]||"--"],
-["涨停基因",dt["limit_gene"]||"--"],["52周位置",dt["pos_52w"]||"--"],
-["低位启动",dt["low_start"]||"--"],["价量配合",dt["vol_price"]||"--"],
-["风险提示",dt["risk"]||"--"]
-];
-var rowHtml=rows.map(function(r){return "<div class=\"row\"><span class=\"label\">"+r[0]+"</span><span class=\"val\">"+r[1]+"</span></div>"}).join("");
-content.innerHTML="<button class=\"close\" onclick='document.getElementById(\"modal-overlay\").classList.remove(\"active\")'>&times;</button><h3>"+x.code+" "+x.name+"</h3>"+rowHtml+"<div class=\"advice-box\"><b>操作建议：</b><br>"+dt["advice_detail"]+"</div>";
-overlay.classList.add("active")}
-
-function closeModal(e){if(e.target===document.getElementById("modal-overlay")){document.getElementById("modal-overlay").classList.remove("active")}}
-document.addEventListener("keydown",function(e){if(e.key==="Escape"){document.getElementById("modal-overlay").classList.remove("active")}})
-</script>
-</body>
-</html>
-'''
-
+def get_html():
+    global HTML_CACHE
+    if HTML_CACHE is None:
+        HTML_CACHE=_load_html()
+    return HTML_CACHE
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
 
@@ -593,7 +378,7 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b)
     def do_GET(self):
-        if self.path in ("/","/index.html"): self._s(HTML)
+        if self.path in ("/","/index.html"): self._s(get_html())
         elif self.path.startswith("/api/scan"):
             qs=parse_qs(urlparse(self.path).query)
             ms=int(qs.get("min_score",[50])[0])
