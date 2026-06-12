@@ -66,7 +66,7 @@ def send_email(subject, body):
     smtp_host = os.environ.get("SMTP_HOST", "smtp.qq.com")
     smtp_port = int(os.environ.get("SMTP_PORT", "587"))
     smtp_user = os.environ.get("SMTP_USER", "1101600259@qq.com")
-    smtp_pass = os.environ.get("SMTP_PASS", "")
+    smtp_pass = os.environ.get("SMTP_PASS", "wbkxpxkyefsxjfdi")
     smtp_to = os.environ.get("SMTP_TO", "1101600259@qq.com")
     if not all([smtp_host, smtp_user, smtp_pass, smtp_to]):
         print("[Email] Not configured, skip")
