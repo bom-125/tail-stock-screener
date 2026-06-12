@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>???? V8i+ | ?????</title>
+<title>尾盘选股 V8i+ | 智能仪表盘</title>
 <style>
 :root{--bg:#0f0f14;--card:#1a1a24;--border:#2a2a3a;--text:#e0e0e0;--muted:#888;--accent:#4fc3f7;--green:#66bb6a;--red:#ef5350;--orange:#ffa726;--purple:#ab47bc}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -22,8 +22,6 @@ header .status-dot{width:10px;height:10px;border-radius:50%;display:inline-block
 .tab .badge{background:var(--red);color:#fff;font-size:11px;padding:2px 7px;border-radius:10px;margin-left:6px;font-weight:700}
 .panel{display:none}
 .panel.active{display:block}
-
-/* Holdings */
 .holdings-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
 .holding-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;transition:border-color .2s}
 .holding-card:hover{border-color:var(--accent)}
@@ -44,8 +42,6 @@ header .status-dot{width:10px;height:10px;border-radius:50%;display:inline-block
 .signal-warn{background:rgba(255,167,38,.15);color:var(--orange)}
 .signal-ok{background:rgba(102,187,106,.15);color:var(--green)}
 .hc-advice{font-weight:700;font-size:13px;margin-top:6px}
-
-/* Scan */
 .scan-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
 .btn{padding:10px 24px;border-radius:8px;border:none;font-weight:700;font-size:14px;cursor:pointer;transition:all .2s}
 .btn-primary{background:var(--accent);color:#000}
@@ -59,8 +55,6 @@ input:focus{outline:none;border-color:var(--accent)}
 .scan-result th{text-align:left;padding:10px 14px;font-size:12px;color:var(--muted);background:rgba(255,255,255,.03);border-bottom:1px solid var(--border)}
 .scan-result td{padding:10px 14px;font-size:13px;border-bottom:1px solid var(--border)}
 .scan-result tr:hover{background:rgba(79,195,247,.05)}
-
-/* Loader */
 .loader-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,15,20,.9);display:flex;align-items:center;justify-content:center;z-index:100;flex-direction:column;opacity:0;pointer-events:none;transition:opacity .3s}
 .loader-overlay.show{opacity:1;pointer-events:all}
 .loader-box{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:30px 40px;text-align:center;min-width:300px}
@@ -68,11 +62,8 @@ input:focus{outline:none;border-color:var(--accent)}
 .loader-bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--green));border-radius:4px;transition:width .3s;width:0%}
 .loader-title{font-weight:700;font-size:16px;margin-bottom:4px}
 .loader-stage{font-size:13px;color:var(--muted)}
-/* Add holding form */
 .form-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
 .form-row input{width:110px}
-
-/* Alert list */
 .alert-list{display:flex;flex-direction:column;gap:8px}
 .alert-item{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:12px}
 .alert-time{font-size:12px;color:var(--muted);min-width:70px}
@@ -87,139 +78,137 @@ input:focus{outline:none;border-color:var(--accent)}
 <body>
 <header>
   <div>
-    <h1>?? ???? V8i+</h1>
-    <span style="font-size:12px;color:var(--muted)">????? | ????+????</span>
+    <h1>尾盘选股 V8i+</h1>
+    <span style="font-size:12px;color:var(--muted)">智能仪表盘 | 超跌反弹+实时监控</span>
   </div>
   <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
-    <span style="font-size:13px"><span class="status-dot" id="mkt-dot" style="background:var(--muted)"></span><span id="mkt-status">???...</span></span>
-    <span style="font-size:13px;color:var(--muted)" id="monitor-status">??: --</span>
+    <span style="font-size:13px"><span class="status-dot" id="mkt-dot" style="background:var(--muted)"></span><span id="mkt-status">检测中...</span></span>
+    <span style="font-size:13px;color:var(--muted)" id="monitor-status">监控: --</span>
   </div>
 </header>
 
 <div class="container">
   <div class="tabs">
-    <button class="tab active" onclick="switchTab('holdings')">?? ???? <span class="badge" id="holding-count">0</span></button>
-    <button class="tab" onclick="switchTab('scan')">?? ????</button>
-    <button class="tab" onclick="switchTab('alerts')">?? ???? <span class="badge" id="alert-badge" style="display:none">0</span></button>
+    <button class="tab active" onclick="switchTab('holdings')">我的持仓 <span class="badge" id="holding-count">0</span></button>
+    <button class="tab" onclick="switchTab('scan')">选股扫描</button>
+    <button class="tab" onclick="switchTab('alerts')">提醒记录 <span class="badge" id="alert-badge" style="display:none">0</span></button>
   </div>
 
-  <!-- Holdings Panel -->
   <div class="panel active" id="panel-holdings">
     <div class="scan-bar">
-      <button class="btn btn-sm btn-primary" onclick="refreshHoldings()">?? ????</button>
-      <button class="btn btn-sm" onclick="toggleAddForm()" style="background:var(--border);color:var(--text)">+ ????</button>
-      <span style="font-size:13px;color:var(--muted)">???: <b id="total-value">--</b> | ???: <b id="total-pnl">--</b></span>
+      <button class="btn btn-sm btn-primary" onclick="refreshHoldings()">刷新分析</button>
+      <button class="btn btn-sm" onclick="toggleAddForm()" style="background:var(--border);color:var(--text)">+ 添加持仓</button>
+      <span style="font-size:13px;color:var(--muted)">总市值: <b id="total-value">--</b> | 总盈亏: <b id="total-pnl">--</b></span>
     </div>
     <div id="add-form" style="display:none;margin-bottom:12px;padding:12px;background:var(--card);border-radius:10px;border:1px solid var(--border)">
       <div class="form-row">
-        <input placeholder="??(?600900)" id="add-code">
-        <input placeholder="??" id="add-name">
-        <input placeholder="???" id="add-price" type="number" step="0.01">
-        <input placeholder="??" id="add-shares" type="number" step="100">
-        <input placeholder="????" id="add-date" type="date">
-        <button class="btn btn-sm btn-primary" onclick="addHolding()">????</button>
-        <button class="btn btn-sm" onclick="toggleAddForm()" style="background:var(--border);color:var(--text)">??</button>
+        <input placeholder="代码(600900)" id="add-code">
+        <input placeholder="名称" id="add-name">
+        <input placeholder="买入价" id="add-price" type="number" step="0.01">
+        <input placeholder="股数" id="add-shares" type="number" step="100">
+        <input placeholder="买入日期" id="add-date" type="date">
+        <button class="btn btn-sm btn-primary" onclick="addHolding()">确认添加</button>
+        <button class="btn btn-sm" onclick="toggleAddForm()" style="background:var(--border);color:var(--text)">取消</button>
       </div>
     </div>
     <div class="holdings-grid" id="holdings-grid">
-      <div class="empty-state">?????????????</div>
+      <div class="empty-state">暂无持仓，点击上方按钮添加</div>
     </div>
   </div>
 
-  <!-- Scan Panel -->
   <div class="panel" id="panel-scan">
     <div class="scan-bar">
       <input type="date" id="td" style="width:140px">
-      <span style="font-size:13px">???:</span>
+      <span style="font-size:13px">最低分:</span>
       <select id="ms"><option value="30">30</option><option value="35" selected>35</option><option value="40">40</option><option value="45">45</option></select>
-      <button class="btn btn-primary" id="btn" onclick="startScan()">?? ????</button>
-      <button class="btn btn-sm" onclick="setToday()" style="background:var(--border);color:var(--text)">?? ??</button>
+      <button class="btn btn-primary" id="btn" onclick="startScan()">开始扫描</button>
+      <button class="btn btn-sm" onclick="setToday()" style="background:var(--border);color:var(--text)">今日</button>
       <span id="tip" style="font-size:13px;color:var(--muted)"></span>
     </div>
     <div id="status" style="margin-bottom:8px"></div>
     <div class="scan-result" id="card" style="display:none">
       <div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between">
-        <b id="rd">??</b>
+        <b id="rd">结果</b>
         <span style="color:var(--muted);font-size:13px" id="rc"></span>
       </div>
-      <div style="overflow-x:auto"><table><thead><tr><th>#</th><th>??</th><th>??</th><th>??</th><th>??</th><th>??</th><th>??</th><th>??</th><th>????</th></tr></thead><tbody id="tbody"></tbody></table></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>#</th><th>代码</th><th>名称</th><th>评分</th><th>现价</th><th>涨跌</th><th>建议</th><th>市场</th><th>买入时机</th></tr></thead><tbody id="tbody"></tbody></table></div>
     </div>
   </div>
 
-  <!-- Alerts Panel -->
   <div class="panel" id="panel-alerts">
     <div class="scan-bar">
-      <button class="btn btn-sm btn-primary" onclick="refreshAlerts()">?? ????</button>
+      <button class="btn btn-sm btn-primary" onclick="refreshAlerts()">刷新提醒</button>
       <span style="font-size:13px;color:var(--muted)" id="alerts-info"></span>
     </div>
     <div class="alert-list" id="alert-list">
-      <div class="empty-state">??????</div>
+      <div class="empty-state">暂无提醒记录</div>
     </div>
   </div>
 </div>
 
-<!-- Loader -->
 <div class="loader-overlay" id="loader-overlay">
   <div class="loader-box">
-    <div class="loader-title" id="loader-title">???...</div>
+    <div class="loader-title" id="loader-title">扫描中...</div>
     <div class="loader-bar-bg"><div class="loader-bar-fill" id="loader-bar"></div></div>
-    <div class="loader-stage" id="loader-stage">???...</div>
+    <div class="loader-stage" id="loader-stage">准备中...</div>
   </div>
 </div>
 
 <script>
-// ---- Utils ----
-function getLatestTradeDay(d){d=new Date(d);var day=d.getDay(),h=d.getHours();if(day===0){d.setDate(d.getDate()-2)}else if(day===6){d.setDate(d.getDate()-1)}else if(day===1&&h<9){d.setDate(d.getDate()-3)}else if(h<9){d.setDate(d.getDate()-1)}return d.toISOString().split("T")[0]}
-var _store=[];
+var T = {
+  getLatestTradeDay: function(d){d=new Date(d);var day=d.getDay(),h=d.getHours();if(day===0){d.setDate(d.getDate()-2)}else if(day===6){d.setDate(d.getDate()-1)}else if(day===1&&h<9){d.setDate(d.getDate()-3)}else if(h<9){d.setDate(d.getDate()-1)}return d.toISOString().split("T")[0]},
+  currentTab: "holdings",
+  scanTimer: null,
+  store: []
+};
 
-// ---- Tab switching ----
-var currentTab="holdings";
 function switchTab(tab){
-  currentTab=tab;
-  document.querySelectorAll(".tab").forEach(function(t){t.classList.toggle("active",t.textContent.includes(tab==="holdings"?"??":tab==="scan"?"??":"??"))});
-  document.querySelectorAll(".panel").forEach(function(p,i){
-    var ids=["panel-holdings","panel-scan","panel-alerts"];
-    p.classList.toggle("active",p.id===ids[tab==="holdings"?0:tab==="scan"?1:2]);
+  T.currentTab=tab;
+  document.querySelectorAll(".tab").forEach(function(t,i){
+    t.classList.toggle("active", (i===0&&tab==="holdings")||(i===1&&tab==="scan")||(i===2&&tab==="alerts"));
   });
+  document.getElementById("panel-holdings").classList.toggle("active",tab==="holdings");
+  document.getElementById("panel-scan").classList.toggle("active",tab==="scan");
+  document.getElementById("panel-alerts").classList.toggle("active",tab==="alerts");
   if(tab==="holdings")refreshHoldings();
   if(tab==="alerts")refreshAlerts();
 }
 
-// ---- Holdings ----
 function toggleAddForm(){
   var f=document.getElementById("add-form");
   f.style.display=f.style.display==="none"?"block":"none";
 }
+
 function addHolding(){
   var code=document.getElementById("add-code").value.trim();
   var name=document.getElementById("add-name").value.trim();
   var price=parseFloat(document.getElementById("add-price").value);
   var shares=parseInt(document.getElementById("add-shares").value);
   var date=document.getElementById("add-date").value;
-  if(!code||!name||!price||!shares){alert("???????");return}
+  if(!code||!name||!price||!shares){alert("请填写完整信息");return}
   var xhr=new XMLHttpRequest();
   xhr.open("POST","/api/holdings",true);
   xhr.setRequestHeader("Content-Type","application/json");
   xhr.onload=function(){
     if(xhr.status===200){toggleAddForm();refreshHoldings()}
-    else{alert("????")}
+    else{alert("添加失败")}
   };
   xhr.send(JSON.stringify({code:code,name:name,buy_price:price,shares:shares,buy_date:date}));
 }
+
 function deleteHolding(code){
-  if(!confirm("???? "+code+"?"))return;
+  if(!confirm("确认删除 "+code+"?"))return;
   var xhr=new XMLHttpRequest();
   xhr.open("DELETE","/api/holdings?code="+code,true);
   xhr.onload=function(){refreshHoldings()};
   xhr.send();
 }
+
 function refreshHoldings(){
-  // Fetch holdings
   var xhr=new XMLHttpRequest();
   xhr.open("GET","/api/holdings",true);
   xhr.onload=function(){
     var holdings=JSON.parse(xhr.responseText);
-    // Analyze them
     var ax=new XMLHttpRequest();
     ax.open("GET","/api/holdings/analyze",true);
     ax.onload=function(){
@@ -229,7 +218,7 @@ function refreshHoldings(){
       document.getElementById("total-value").textContent=(data.total_value||0).toLocaleString("zh-CN",{style:"currency",currency:"CNY"});
       var pnl=data.total_pnl||0;
       var pnlEl=document.getElementById("total-pnl");
-      pnlEl.textContent=(pnl>=0?"+":"")+pnl.toFixed(0)+"?";
+      pnlEl.textContent=(pnl>=0?"+":"")+pnl.toFixed(0)+"元";
       pnlEl.style.color=pnl>=0?"var(--green)":"var(--red)";
       renderHoldings(results);
     };
@@ -237,116 +226,117 @@ function refreshHoldings(){
   };
   xhr.send();
 }
+
 function renderHoldings(results){
   var grid=document.getElementById("holdings-grid");
-  if(results.length===0){grid.innerHTML='<div class="empty-state">?????????????</div>';return}
+  if(results.length===0){grid.innerHTML='<div class="empty-state">'+"\u6682\u65e0\u6301\u4ed3\uff0c\u70b9\u51fb\u4e0a\u65b9\u6309\u94ae\u6dfb\u52a0"+'</div>';return}
   var h="";
   for(var i=0;i<results.length;i++){
     var r=results[i];
     var pnl=r.pnl_pct||0;
     var pnlColor=pnl>=0?"var(--green)":"var(--red)";
-    var hasDanger=r.sell_signals&&r.sell_signals.some(function(s){return s.indexOf("??")>=0||s.indexOf("??")>=0||s.indexOf("??")>=0});
+    var hasDanger=r.sell_signals&&r.sell_signals.some(function(s){return s.indexOf("\u89e6\u53d1")>=0||s.indexOf("\u6b62\u635f")>=0||s.indexOf("\u8d70\u5f31")>=0});
     var cardClass=hasDanger?"holding-card alert-danger":"holding-card";
     h+='<div class="'+cardClass+'">';
     h+='<div class="hc-header"><div><span class="hc-code">'+r.code+'</span> <span class="hc-name">'+r.name+'</span></div>';
     h+='<div class="hc-price"><div class="cur" style="color:'+pnlColor+'">'+(r.cur_price||0).toFixed(2)+'</div>';
     h+='<div class="chg" style="color:'+pnlColor+'">'+(pnl>=0?"+":"")+pnl.toFixed(2)+'%</div></div></div>';
     h+='<div class="hc-grid">';
-    h+='<span>??</span><strong>'+(r.buy_price||0).toFixed(2)+'</strong>';
-    h+='<span>??</span><strong>'+(r.shares||0)+'</strong>';
-    h+='<span>??</span><strong>'+(r.market_value||0).toLocaleString()+'</strong>';
-    h+='<span>??</span><strong style="color:'+pnlColor+'">'+(r.pnl_amt||0).toFixed(0)+'?</strong>';
-    h+='<span>??</span><strong style="color:var(--red)">'+(r.sl_price||0).toFixed(2)+'</strong>';
-    h+='<span>??</span><strong style="color:var(--green)">'+(r.tp_price||0).toFixed(2)+'</strong>';
+    h+='<span>\u6210\u672c</span><strong>'+(r.buy_price||0).toFixed(2)+'</strong>';
+    h+='<span>\u80a1\u6570</span><strong>'+(r.shares||0)+'</strong>';
+    h+='<span>\u5e02\u503c</span><strong>'+(r.market_value||0).toLocaleString()+'</strong>';
+    h+='<span>\u76c8\u4e8f</span><strong style="color:'+pnlColor+'">'+(r.pnl_amt||0).toFixed(0)+'\u5143</strong>';
+    h+='<span>\u6b62\u635f</span><strong style="color:var(--red)">'+(r.sl_price||0).toFixed(2)+'</strong>';
+    h+='<span>\u6b62\u76c8</span><strong style="color:var(--green)">'+(r.tp_price||0).toFixed(2)+'</strong>';
     h+='</div>';
     if(r.sell_signals&&r.sell_signals.length>0){
       h+='<div class="hc-signals">';
       for(var j=0;j<r.sell_signals.length;j++){
         var s=r.sell_signals[j];
         var cls="signal-ok";
-        if(s.indexOf("??")>=0||s.indexOf("??")>=0)cls="signal-danger";
-        else if(s.indexOf("??")>=0||s.indexOf("?")>=0||s.indexOf("?")>=0)cls="signal-warn";
+        if(s.indexOf("\u89e6\u53d1")>=0||s.indexOf("\u6b62\u635f")>=0)cls="signal-danger";
+        else if(s.indexOf("\u8d70\u5f31")>=0||s.indexOf("\u8dcc")>=0||s.indexOf("\u4e34")>=0)cls="signal-warn";
         h+='<div class="hc-signal '+cls+'">'+s+'</div>';
       }
       h+='</div>';
     }
-    h+='<div class="hc-advice" style="color:'+(r.advice.indexOf("?")>=0?"var(--red)":"var(--accent)")+'">??: '+r.advice+' | '+r.reason+'</div>';
-    h+='<div style="margin-top:6px"><button class="btn btn-sm" onclick="deleteHolding(\''+r.code+'\')" style="background:var(--red);color:#fff;font-size:11px;padding:3px 10px">??</button></div>';
+    h+='<div class="hc-advice" style="color:'+(r.advice.indexOf("\u5356")>=0?"var(--red)":"var(--accent)")+'">\u5efa\u8bae: '+r.advice+' | '+r.reason+'</div>';
+    h+='<div style="margin-top:6px"><button class="btn btn-sm" onclick="deleteHolding(\''+r.code+'\')" style="background:var(--red);color:#fff;font-size:11px;padding:3px 10px">\u5220\u9664</button></div>';
     h+='</div>';
   }
   grid.innerHTML=h;
 }
 
-// ---- Scan (async mode) ----
 function setToday(){
-  document.getElementById("td").value=getLatestTradeDay(new Date());
+  document.getElementById("td").value=T.getLatestTradeDay(new Date());
   startScan();
 }
-var _scanPollTimer=null;
+
 function startScan(){
   var ms=document.getElementById("ms").value;
   var td=document.getElementById("td").value;
-  var isToday=(td===getLatestTradeDay(new Date()));
-  var btn=document.getElementById("btn");var tip=document.getElementById("tip");
-  var status=document.getElementById("status");var card=document.getElementById("card");
-  var ov=document.getElementById("loader-overlay");var bar=document.getElementById("loader-bar");
-  var ltitle=document.getElementById("loader-title");var lstage=document.getElementById("loader-stage");
-  
-  btn.disabled=true;btn.textContent="???...";card.style.display="none";status.textContent="";
-  bar.style.width="0%";ltitle.textContent="????...";lstage.textContent="???...";ov.classList.add("show");
-  if(_scanPollTimer)clearInterval(_scanPollTimer);
-  
+  var isToday=(td===T.getLatestTradeDay(new Date()));
+  var btn=document.getElementById("btn");
+  var tip=document.getElementById("tip");
+  var status=document.getElementById("status");
+  var card=document.getElementById("card");
+  var ov=document.getElementById("loader-overlay");
+  var bar=document.getElementById("loader-bar");
+  var ltitle=document.getElementById("loader-title");
+  var lstage=document.getElementById("loader-stage");
+  btn.disabled=true;btn.textContent="扫描中...";card.style.display="none";status.textContent="";
+  bar.style.width="0%";ltitle.textContent="扫描中...";lstage.textContent="启动中...";ov.classList.add("show");
+  if(T.scanTimer)clearInterval(T.scanTimer);
   var scanDone=false,pollCount=0;
-  _scanPollTimer=setInterval(function(){
+  T.scanTimer=setInterval(function(){
     var px=new XMLHttpRequest();
     px.open("GET","/api/progress",true);px.timeout=3000;
     px.onload=function(){
       try{
         var p=JSON.parse(px.responseText);pollCount++;
-        if(p.total>0){var rp=Math.min(95,Math.round(p.done/p.total*100));bar.style.width=rp+"%";ltitle.textContent="?? "+rp+"%"}
+        if(p.total>0){var rp=Math.min(95,Math.round(p.done/p.total*100));bar.style.width=rp+"%";ltitle.textContent="进度 "+rp+"%"}
         if(p.msg)lstage.textContent=p.msg;
         if(p.status==="done"&&p.results&&!scanDone){
-          scanDone=true;clearInterval(_scanPollTimer);
-          bar.style.width="100%";ltitle.textContent="??!";
+          scanDone=true;clearInterval(T.scanTimer);
+          bar.style.width="100%";ltitle.textContent="完成!";
           setTimeout(function(){ov.classList.remove("show")},400);
           var d={date:td||p.date,count:p.results.length,elapsed:(pollCount*0.5).toFixed(1),results:p.results,mode:"Live"};
-          if(p.results.length===0){status.innerHTML='<span style="color:var(--orange)">????????</span>'}
-          else{status.innerHTML='<span style="color:var(--green)">????! '+p.results.length+' ?</span>';renderScan(d)}
-          tip.textContent="?? "+(pollCount*0.5).toFixed(1)+"?";btn.disabled=false;btn.textContent="????";
+          if(p.results.length===0){status.innerHTML='<span style="color:var(--orange)">无符合条件的标的</span>'}
+          else{status.innerHTML='<span style="color:var(--green)">扫描完成! '+p.results.length+' 只</span>';renderScan(d)}
+          tip.textContent="耗时 "+(pollCount*0.5).toFixed(1)+"秒";btn.disabled=false;btn.textContent="开始扫描";
         }
-        if(p.status==="error"&&!scanDone){scanDone=true;clearInterval(_scanPollTimer);ov.classList.remove("show");status.innerHTML='<span style="color:var(--red)">??: '+p.msg+'</span>';btn.disabled=false;btn.textContent="????"}
-        if(pollCount>180&&!scanDone){scanDone=true;clearInterval(_scanPollTimer);ov.classList.remove("show");status.innerHTML='<span style="color:var(--red)">??</span>';btn.disabled=false;btn.textContent="????"}
+        if(p.status==="error"&&!scanDone){scanDone=true;clearInterval(T.scanTimer);ov.classList.remove("show");status.innerHTML='<span style="color:var(--red)">错误: '+p.msg+'</span>';btn.disabled=false;btn.textContent="开始扫描"}
+        if(pollCount>180&&!scanDone){scanDone=true;clearInterval(T.scanTimer);ov.classList.remove("show");status.innerHTML='<span style="color:var(--red)">超时</span>';btn.disabled=false;btn.textContent="开始扫描"}
       }catch(e){}
     };
     px.send();
   },500);
-  
   var url="/api/scan?min_score="+ms+"&async=1";
   if(!isToday)url+="&date="+td;
   var xhr=new XMLHttpRequest();xhr.open("GET",url,true);xhr.timeout=10000;xhr.send();
 }
+
 function renderScan(d){
   var card=document.getElementById("card");card.style.display="block";
-  document.getElementById("rd").textContent="?? | "+d.date;
-  document.getElementById("rc").textContent=d.count+" ? | "+d.elapsed+"?";
+  document.getElementById("rd").textContent="结果 | "+d.date;
+  document.getElementById("rc").textContent=d.count+" 只 | "+d.elapsed+"秒";
   var h="";
   for(var i=0;i<d.results.length;i++){
     var x=d.results[i],dt=x.details||{},sc=x.score;
-    var label=sc>=80?"????":sc>=70?"??":sc>=60?"????":sc>=50?"??":"??";
+    var label=sc>=80?"强烈买入":sc>=70?"买入":sc>=60?"谨慎买入":sc>=50?"关注":"观望";
     var chg=x.change_pct||0;var chgStr=(chg>=0?"+":"")+chg.toFixed(2)+"%";
     var chgColor=chg>=3?"var(--green)":chg>=0?"var(--accent)":"var(--red)";
     var mkt=dt.market_label||dt.market||"--";
     h+="<tr><td>"+(i+1)+"</td><td style='font-weight:600;color:var(--accent)'>"+x.code+"</td><td>"+x.name+"</td>";
     h+="<td><b>"+x.score+"</b></td><td>"+(x.price||0).toFixed(2)+"</td>";
     h+="<td style='color:"+chgColor+";font-weight:600'>"+chgStr+"</td>";
-    h+="<td style='font-weight:700;color:"+(x.advice.indexOf("??")>=0?"var(--purple)":"var(--accent)")+"'>"+x.advice+"</td>";
+    h+="<td style='font-weight:700;color:"+(x.advice.indexOf("反弹")>=0?"var(--purple)":"var(--accent)")+"'>"+x.advice+"</td>";
     h+="<td style='font-size:12px'>"+mkt+"</td>";
-    h+="<td style='font-size:12px'>"+dt.buy_timing+"</td></tr>";
+    h+="<td style='font-size:12px'>"+(dt.buy_timing||"")+"</td></tr>";
   }
   document.getElementById("tbody").innerHTML=h;
 }
 
-// ---- Alerts ----
 function refreshAlerts(){
   var xhr=new XMLHttpRequest();
   xhr.open("GET","/api/alerts",true);
@@ -355,28 +345,28 @@ function refreshAlerts(){
     var badge=document.getElementById("alert-badge");
     if(alerts.length>0){badge.style.display="inline";badge.textContent=alerts.length}
     else{badge.style.display="none"}
-    document.getElementById("alerts-info").textContent="? "+alerts.length+" ???";
+    document.getElementById("alerts-info").textContent="共 "+alerts.length+" 条记录";
     renderAlerts(alerts);
   };
   xhr.send();
 }
+
 function renderAlerts(alerts){
   var el=document.getElementById("alert-list");
-  if(alerts.length===0){el.innerHTML='<div class="empty-state">??????</div>';return}
+  if(alerts.length===0){el.innerHTML='<div class="empty-state">暂无提醒记录</div>';return}
   var h="";
   for(var i=0;i<alerts.length;i++){
     var a=alerts[i];
-    var tagCls=a.type.indexOf("??")>=0||a.type.indexOf("??")>=0?"tag-tp":a.type.indexOf("??")>=0?"tag-stop":"tag-weak";
+    var tagCls=a.type.indexOf("止盈")>=0||a.type.indexOf("移动")>=0?"tag-tp":a.type.indexOf("止损")>=0?"tag-stop":"tag-weak";
     h+='<div class="alert-item"><span class="alert-time">'+a.time+'</span>';
     h+='<span class="alert-type-tag '+tagCls+'">'+a.type+'</span>';
     h+='<b style="color:var(--accent)">'+a.code+' '+a.name+'</b>';
     h+='<span class="alert-msg">'+a.msg+'</span>';
-    h+='<span style="font-size:12px">??: '+(a.pnl_pct>=0?"+":"")+a.pnl_pct.toFixed(2)+'%</span></div>';
+    h+='<span style="font-size:12px">盈亏: '+(a.pnl_pct>=0?"+":"")+a.pnl_pct.toFixed(2)+'%</span></div>';
   }
   el.innerHTML=h;
 }
 
-// ---- Market Status Polling ----
 function checkMarket(){
   var xhr=new XMLHttpRequest();
   xhr.open("GET","/api/monitor",true);xhr.timeout=3000;
@@ -388,20 +378,19 @@ function checkMarket(){
       var ms=document.getElementById("monitor-status");
       if(s.running){
         dot.className="status-dot status-live";
-        st.textContent="?????";
-        ms.textContent="????: "+s.last_check+" | ??: "+s.holdings_count+"?";
+        st.textContent="盘中监控中";
+        ms.textContent="上次检查: "+s.last_check+" | 持仓: "+s.holdings_count+"只";
       }else{
         dot.className="status-dot status-closed";
-        st.textContent="?????";
-        ms.textContent="????: "+(s.last_check||"--");
+        st.textContent="非交易时段";
+        ms.textContent="上次检查: "+(s.last_check||"--");
       }
     }catch(e){}
   };
   xhr.send();
 }
 
-// ---- Init ----
-document.getElementById("td").value=getLatestTradeDay(new Date());
+document.getElementById("td").value=T.getLatestTradeDay(new Date());
 setInterval(checkMarket,30000);
 checkMarket();
 refreshHoldings();
