@@ -1428,6 +1428,173 @@ def screen(ms=35, topn=50, date_str=None):
         _save_daily_cache()
         return results[:topn]
 
+
+# ---- Holdings Monitor & Sell Alerts ----
+MONITOR_ALERTS = []  # Store recent alerts: [{time, code, name, type, price, msg}]
+MONITOR_STATUS = {"running": False, "last_check": "", "next_check": ""}
+
+def is_market_open():
+    """Check if market is currently open (9:30-11:30, 13:00-15:00 Mon-Fri)"""
+    import datetime
+    now = datetime.datetime.now()
+    if now.weekday() >= 5:
+        return False
+    t = now.hour * 100 + now.minute
+    return (930 <= t < 1130) or (1300 <= t < 1500)
+
+def monitor_holdings():
+    """Check all holdings against real-time quotes for sell signals"""
+    global MONITOR_ALERTS, MONITOR_STATUS
+    if not is_market_open():
+        MONITOR_STATUS["running"] = False
+        return []
+    
+    holdings = load_holdings()
+    if not holdings:
+        MONITOR_STATUS["running"] = False
+        return []
+    
+    codes = []
+    for h in holdings:
+        sym = ("sh" if h["code"].startswith("6") else "sz") + h["code"]
+        codes.append(sym)
+    
+    try:
+        quotes = get_quotes(codes)
+    except:
+        return []
+    
+    alerts = []
+    now = datetime.now()
+    
+    for h in holdings:
+        sym = ("sh" if h["code"].startswith("6") else "sz") + h["code"]
+        if sym not in quotes:
+            continue
+        
+        q = quotes[sym]
+        cur_price = f(q.get("price", 0))
+        high = f(q.get("high", 0))
+        low = f(q.get("low", 0))
+        yclose = f(q.get("yclose", 0))
+        
+        if cur_price <= 0 or h.get("buy_price", 0) <= 0:
+            continue
+        
+        bp = h["buy_price"]
+        pnl_pct = (cur_price - bp) / bp * 100
+        shares = h.get("shares", 0)
+        pnl_amt = (cur_price - bp) * shares
+        
+        # Calculate dynamic TP/SL using stored kline data
+        sym_k = ("sh" if h["code"].startswith("6") else "sz") + h["code"]
+        kls = fetch_kline_sina(sym_k, 60) or []
+        
+        # Default TP/SL
+        tp_pct = 5.0; sl_pct = -4.0; max_hold = 4
+        
+        if kls and len(kls) >= 14:
+            atr_sum = sum(k["high"] - k["low"] for k in kls[-14:])
+            atr14 = atr_sum / 14
+            atr_pct = atr14 / cur_price * 100 if cur_price > 0 else 3
+            if atr_pct > 5: tp_pct, sl_pct, max_hold = 7.0, -6.0, 2
+            elif atr_pct > 3: tp_pct, sl_pct, max_hold = 6.0, -5.0, 3
+            else: tp_pct, sl_pct, max_hold = 5.0, -4.0, 4
+        
+        # Estimate hold days
+        buy_date = h.get("buy_date", "")
+        hold_days = 1
+        if buy_date and kls:
+            hold_days = max(1, len([k for k in kls if k["day"] >= buy_date.replace("-", "")]))
+        
+        triggered = False
+        alert_type = ""
+        alert_msg = ""
+        
+        # Check TP
+        tp_price = bp * (1 + tp_pct / 100)
+        if high >= tp_price:
+            triggered = True
+            alert_type = "????"
+            alert_msg = "{} ????? {:.2f} (??{:.2f}, ??{:.1f}%)".format(h["name"], tp_price, cur_price, pnl_pct)
+        
+        # Check SL
+        sl_price = bp * (1 + sl_pct / 100)
+        if not triggered and low <= sl_price:
+            triggered = True
+            alert_type = "????"
+            alert_msg = "{} ????? {:.2f} (??{:.2f}, ??{:.1f}%)".format(h["name"], sl_price, cur_price, pnl_pct)
+        
+        # Check trailing stop
+        if not triggered and kls:
+            recent_highs = [k["high"] for k in kls[-hold_days:]]
+            highest_since = max(recent_highs) if recent_highs else cur_price
+            profit_from_high = (highest_since - bp) / bp * 100
+            if profit_from_high >= 5:
+                protected = bp + (highest_since - bp) * 0.4
+                if low <= protected:
+                    triggered = True
+                    alert_type = "????"
+                    alert_msg = "{} ?????? {:.2f} (??{:.2f}, ??{:.2f})".format(h["name"], protected, highest_since, cur_price)
+        
+        # Check weak hold
+        if not triggered and hold_days >= 2 and pnl_pct < -1:
+            triggered = True
+            alert_type = "????"
+            alert_msg = "{} ??{}???{:.1f}%, ????".format(h["name"], hold_days, pnl_pct)
+        
+        if triggered:
+            alert = {
+                "time": now.strftime("%H:%M:%S"),
+                "code": h["code"],
+                "name": h["name"],
+                "type": alert_type,
+                "price": round(cur_price, 2),
+                "pnl_pct": round(pnl_pct, 2),
+                "pnl_amt": round(pnl_amt, 2),
+                "msg": alert_msg
+            }
+            alerts.append(alert)
+            MONITOR_ALERTS.insert(0, alert)
+            # Keep only last 50 alerts
+            if len(MONITOR_ALERTS) > 50:
+                MONITOR_ALERTS = MONITOR_ALERTS[:50]
+            
+            # Send email alert
+            body = """<h2>{} ????!</h2>
+            <p><b>{}</b> ({})</p>
+            <p>????: {:.2f} | ??: {:+.1f}% ({:+.0f}?)</p>
+            <p><b>{}</b></p>
+            <p><small>-- ??????????</small></p>""".format(
+                alert_type, h["code"], h["name"], cur_price, pnl_pct, pnl_amt, alert_msg
+            )
+            send_email("????: {} {} - {}".format(h["code"], h["name"], alert_type), body)
+    
+    MONITOR_STATUS["running"] = True
+    MONITOR_STATUS["last_check"] = now.strftime("%H:%M:%S")
+    MONITOR_STATUS["holdings_count"] = len(holdings)
+    MONITOR_STATUS["alerts_count"] = len(alerts)
+    return alerts
+
+def monitor_loop():
+    """Background thread: monitor holdings during market hours"""
+    import time as _time
+    while True:
+        try:
+            if is_market_open():
+                monitor_holdings()
+                _time.sleep(60)  # Check every 60 seconds during market
+            else:
+                MONITOR_STATUS["running"] = False
+                _time.sleep(120)  # Check every 2 minutes outside market
+        except Exception as e:
+            print("[Monitor] Error: {}".format(e))
+            _time.sleep(60)
+
+# Start monitor thread
+_monitor_thread = threading.Thread(target=monitor_loop, daemon=True)
+_monitor_thread.start()
+
 def _load_html():
     p=os.path.join(os.path.dirname(os.path.abspath(__file__)),"static","index.html")
     with open(p,"r",encoding="utf-8") as f:
@@ -1540,9 +1707,18 @@ class H(BaseHTTPRequestHandler):
             else:
                 self._s(json.dumps(load_holdings(),ensure_ascii=False),"application/json; charset=utf-8")
 
+        elif self.path.startswith("/api/alerts"):
+            self._s(json.dumps(MONITOR_ALERTS,ensure_ascii=False),"application/json; charset=utf-8")
+        
+        elif self.path.startswith("/api/monitor/check"):
+            alerts = monitor_holdings()
+            self._s(json.dumps({"alerts": alerts, "status": MONITOR_STATUS}, ensure_ascii=False),"application/json; charset=utf-8")
+        
+        elif self.path.startswith("/api/monitor"):
+            self._s(json.dumps(MONITOR_STATUS, ensure_ascii=False),"application/json; charset=utf-8")
+        
         elif self.path.startswith("/api/progress"):
             resp = dict(PROGRESS)
-            # When scan is done, include results and clear from PROGRESS
             if PROGRESS.get("status") == "done" and PROGRESS.get("results"):
                 resp["results"] = PROGRESS["results"]
             self._s(json.dumps(resp,ensure_ascii=False),"application/json; charset=utf-8")
