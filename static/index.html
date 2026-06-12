@@ -259,7 +259,6 @@ function _doRefreshHoldings(btn){
   xhr.onerror=function(){if(btn){btn.disabled=false;btn.textContent="\u5237\u65b0\u5206\u6790";}};
   xhr.send();
 }
-}
 
 function renderHoldings(results){
   var grid=document.getElementById("holdings-grid");
