@@ -20,7 +20,122 @@ S=new_session()
 CACHE={}; STOCK_CACHE_FILE=os.path.join(os.path.dirname(os.path.abspath(__file__)),"stocks_cache.json")
 KLINES_CACHE_FILE=os.path.join(os.path.dirname(os.path.abspath(__file__)),"klines_cache.json")
 KLINES_DAILY_CACHE=os.path.join(os.path.dirname(os.path.abspath(__file__)),"klines_daily.json")
-PROGRESS={"total":0,"done":0,"msg":""}
+PROGRESS={"total":0,"done":0,"msg":"","results":None,"status":"idle"}
+
+# ---- Async Scan Infrastructure ----
+import threading
+SCAN_LOCK = threading.Lock()
+
+def _scan_async(ms=35, topn=50, date_str=None):
+    """Run scan in background, update PROGRESS with results."""
+    global PROGRESS
+    try:
+        PROGRESS["status"] = "running"
+        PROGRESS["results"] = None
+        PROGRESS["msg"] = "Starting..."
+        results = screen(ms=ms, topn=topn, date_str=date_str)
+        PROGRESS["results"] = results
+        PROGRESS["status"] = "done"
+        PROGRESS["msg"] = "Completed: {} stocks found".format(len(results))
+        return results
+    except Exception as e:
+        import traceback
+        PROGRESS["status"] = "error"
+        PROGRESS["msg"] = str(e)
+        PROGRESS["error"] = traceback.format_exc()
+        return []
+
+def start_scan_async(ms=35, topn=50, date_str=None):
+    """Start async scan if not already running."""
+    if PROGRESS.get("status") == "running":
+        return False
+    PROGRESS["results"] = None
+    PROGRESS["status"] = "running"
+    PROGRESS["msg"] = "Starting scan..."
+    PROGRESS["total"] = 0
+    PROGRESS["done"] = 0
+    t = threading.Thread(target=_scan_async, args=(ms, topn, date_str), daemon=True)
+    t.start()
+    return True
+
+# ---- Email ----
+def send_email(subject, body):
+    """Send email via SMTP. Configure via env vars."""
+    import smtplib
+    from email.mime.text import MIMEText
+    smtp_host = os.environ.get("SMTP_HOST", "")
+    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_user = os.environ.get("SMTP_USER", "")
+    smtp_pass = os.environ.get("SMTP_PASS", "")
+    smtp_to = os.environ.get("SMTP_TO", "")
+    if not all([smtp_host, smtp_user, smtp_pass, smtp_to]):
+        print("[Email] Not configured, skip")
+        return False
+    try:
+        msg = MIMEText(body, "html", "utf-8")
+        msg["Subject"] = subject
+        msg["From"] = smtp_user
+        msg["To"] = smtp_to
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as s:
+            s.starttls()
+            s.login(smtp_user, smtp_pass)
+            s.sendmail(smtp_user, [smtp_to], msg.as_string())
+        print("[Email] Sent: {}".format(subject))
+        return True
+    except Exception as e:
+        print("[Email] Failed: {}".format(e))
+        return False
+
+# ---- Scheduled 14:30 Auto-Scan ----
+def is_trading_day():
+    """Check if today is a trading day (Mon-Fri, not holiday)."""
+    import datetime
+    now = datetime.datetime.now()
+    if now.weekday() >= 5:  # Saturday=5, Sunday=6
+        return False
+    return True
+
+def scheduled_scan_loop():
+    """Background thread: check time, auto-scan at 14:30 daily."""
+    import datetime, time as _time
+    last_scan_date = None
+    while True:
+        try:
+            now = datetime.datetime.now()
+            today_str = now.strftime("%Y-%m-%d")
+            hm = now.hour * 100 + now.minute
+            
+            # Check if 14:30-14:35 and not scanned today
+            if 1430 <= hm < 1435 and is_trading_day() and last_scan_date != today_str:
+                print("[Scheduler] 14:30 auto-scan triggered")
+                results = _scan_async(ms=30, topn=20, date_str=None)
+                last_scan_date = today_str
+                
+                if results:
+                    # Build email
+                    rows = ""
+                    for i, r in enumerate(results[:10]):
+                        chg_str = "{:+.2f}%".format(r.get("change_pct", 0))
+                        rows += "<tr><td>{}</td><td>{} {}</td><td>{}</td><td>{}</td><td>{}</td></tr>".format(
+                            i+1, r["code"], r["name"], r["score"], chg_str, r.get("advice", ""))
+                    body = """<h2>{} ??????</h2>
+                    <p>???????14:30 | ???? {} ????</p>
+                    <table border='1' cellpadding='6' style='border-collapse:collapse'>
+                    <tr><th>#</th><th>??</th><th>??</th><th>??</th><th>??</th></tr>
+                    {}
+                    </table>
+                    <p><small>-- ??????????</small></p>""".format(today_str, len(results), rows)
+                    send_email("?????? - {}".format(today_str), body)
+            
+            _time.sleep(45)  # Check every 45 seconds
+        except Exception as e:
+            print("[Scheduler] Error: {}".format(e))
+            _time.sleep(60)
+
+# Start scheduler thread
+_scheduler_thread = threading.Thread(target=scheduled_scan_loop, daemon=True)
+_scheduler_thread.start()
+
 
 def f(s):
     try: return float(s)
@@ -1369,15 +1484,28 @@ class H(BaseHTTPRequestHandler):
             qs=parse_qs(urlparse(self.path).query)
             ms=int(qs.get("min_score",[35])[0])
             date_str=qs.get("date",[None])[0]
-            t0=time.time()
-            try:
-                r=screen(ms=ms, date_str=date_str)
-                td=date_str or datetime.now().strftime("%Y-%m-%d")
-                data={"date":td,"count":len(r),"elapsed":round(time.time()-t0,1),"results":r,"mode":"Historical" if date_str else "Live"}
-            except Exception as e:
-                import traceback
-                data={"error":str(e),"trace":traceback.format_exc()}
-            self._s(json.dumps(data,ensure_ascii=False),"application/json; charset=utf-8")
+            async_mode = qs.get("async",["1"])[0] != "0"
+            
+            if async_mode:
+                # Non-blocking: start background scan, return immediately
+                started = start_scan_async(ms=ms, date_str=date_str)
+                data = {
+                    "status": "started" if started else "already_running",
+                    "mode": "Historical" if date_str else "Live",
+                    "date": date_str or datetime.now().strftime("%Y-%m-%d")
+                }
+                self._s(json.dumps(data,ensure_ascii=False),"application/json; charset=utf-8")
+            else:
+                # Blocking mode (for local testing / compatibility)
+                t0=time.time()
+                try:
+                    r=screen(ms=ms, date_str=date_str)
+                    td=date_str or datetime.now().strftime("%Y-%m-%d")
+                    data={"date":td,"count":len(r),"elapsed":round(time.time()-t0,1),"results":r,"mode":"Historical" if date_str else "Live"}
+                except Exception as e:
+                    import traceback
+                    data={"error":str(e),"trace":traceback.format_exc()}
+                self._s(json.dumps(data,ensure_ascii=False),"application/json; charset=utf-8")
         
         elif self.path.startswith("/api/holdings/analyze"):
             results=analyze_all_holdings()
@@ -1413,7 +1541,11 @@ class H(BaseHTTPRequestHandler):
                 self._s(json.dumps(load_holdings(),ensure_ascii=False),"application/json; charset=utf-8")
 
         elif self.path.startswith("/api/progress"):
-            self._s(json.dumps(PROGRESS,ensure_ascii=False),"application/json; charset=utf-8")
+            resp = dict(PROGRESS)
+            # When scan is done, include results and clear from PROGRESS
+            if PROGRESS.get("status") == "done" and PROGRESS.get("results"):
+                resp["results"] = PROGRESS["results"]
+            self._s(json.dumps(resp,ensure_ascii=False),"application/json; charset=utf-8")
         else: self._s("404",code=404)
 
 if __name__=="__main__":
