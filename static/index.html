@@ -211,13 +211,7 @@ function addHolding(){
   xhr.send(JSON.stringify({code:code,name:name,buy_price:price,shares:shares,buy_date:date}));
 }
 
-function deleteHolding(code){
-  if(!confirm("确认删除 "+code+"?"))return;
-  var xhr=new XMLHttpRequest();
-  xhr.open("DELETE","/api/holdings?code="+code,true);
-  xhr.onload=function(){refreshHoldings()};
-  xhr.send();
-}
+function deleteHolding(code){if(!confirm("\u786e\u8ba4\u5220\u9664 "+code+"?"))return;var x=new XMLHttpRequest();x.open("DELETE","/api/holdings?code="+code,true);x.onload=function(){refreshHoldings()};x.onerror=function(){alert("\u5220\u9664\u5931\u8d25")};x.send()}
 
 function refreshHoldings(){
   var xhr=new XMLHttpRequest();
