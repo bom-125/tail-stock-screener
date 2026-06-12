@@ -478,6 +478,7 @@ def score_v8i(quote, kls, market_idx_kls=None, ki=None):
     market_idx_kls: index kline data for market state
     Returns: (score, details_dict, advice)"""
     
+    vol_skip = False; vol_reduce = False; idx_vol5 = 0.0
     # Guard: empty klines
     if not kls or len(kls) == 0:
         return 0, {"filter": "No kline data"}, "??"
@@ -493,13 +494,56 @@ def score_v8i(quote, kls, market_idx_kls=None, ki=None):
     p = close; yc = prev_close; amt = kls[ki]["volume"] * close
 
     if p <= 0 or yc <= 0: return 0, {"filter": "Invalid data"}, "??"
+    if vol_skip: return 0, {"filter": "????%.1f%%??" % idx_vol5}, "??"
+    
+    # ---- Detect market state EARLY (before chg filter, for oversold bounce) ----
+    market_label = "SIDEWAYS"
+    if market_idx_kls and len(market_idx_kls) >= 20:
+        idx_closes = [k["close"] for k in market_idx_kls[-20:]]
+        idx_ma20 = sum(idx_closes)/20
+        idx_close = market_idx_kls[-1]["close"]
+        idx_s5 = (idx_closes[-1] - idx_closes[-5])/idx_closes[-5]*100 if len(idx_closes) >= 5 else 0
+        is_bull = idx_close >= idx_ma20
+        is_strong = is_bull and idx_s5 > 0.3
+        idx_ma60 = sum(k["close"] for k in market_idx_kls[-60:])/60 if len(market_idx_kls) >= 60 else idx_ma20
+        is_side = not is_bull and idx_close >= idx_ma60 if len(market_idx_kls) >= 60 else True
+        if is_strong: market_label = "BULLISH+"
+        elif is_bull: market_label = "BULLISH"
+        elif is_side: market_label = "SIDEWAYS"
+        else: market_label = "WEAK+"
+    # ---- Market volatility filter ----
+    idx_vol5 = 0
+    if market_idx_kls and len(market_idx_kls) >= 5:
+        idx_amps = []
+        for j in range(max(0, len(market_idx_kls)-5), len(market_idx_kls)):
+            ik = market_idx_kls[j]
+            if ik["high"] > 0 and ik["low"] > 0:
+                idx_amps.append((ik["high"]-ik["low"])/ik["close"]*100)
+        if idx_amps:
+            idx_vol5 = sum(idx_amps)/len(idx_amps)
+    # High volatility: reduce position or skip
+    vol_skip = False
+    vol_reduce = False
+    if idx_vol5 > 5.0:
+        vol_skip = True  # Extreme volatility, skip trading
+    elif idx_vol5 > 3.0:
+        vol_reduce = True  # Elevated volatility, reduce position
+    # Check if index itself dropped significantly (oversold signal)
+    idx_drop5 = (idx_closes[-1] - idx_closes[-5])/idx_closes[-5]*100 if len(idx_closes) >= 5 else 0
+    is_oversold_market = (market_label in ("WEAK+","SIDEWAYS") and idx_drop5 < -1.0)
     
     # ---- Hard filters (sim_v8i.py exact) ----
-    if chg < 1.0 or chg > 5.5: return 0, {"filter": "??%.1f%%??" % chg, "chg": round(chg,2)}, "??"
-    if amp > 6.0: return 0, {"filter": "??%.1f%%??" % amp, "amp": round(amp,2)}, "??"
-    if cp < 0.55: return 0, {"filter": "?????"}, "??"
-    if p < 4 or p > 80: return 0, {"filter": "??????"}, "??"
-    if amt < 50000000: return 0, {"filter": "?????"}, "??"
+    # Oversold bounce: allow chg -4% to +5.5% in weak markets
+    if is_oversold_market:
+        if chg < -4.0 or chg > 5.5: return 0, {"filter": "?%.1f%%??" % chg, "chg": round(chg,2)}, "??"
+    else:
+        if chg < 1.0 or chg > 5.5: return 0, {"filter": "?%.1f%%??" % chg, "chg": round(chg,2)}, "??"
+    if is_oversold_market:
+        if amp > 9.0: return 0, {"filter": "?%.1f%%??" % amp, "amp": round(amp,2)}, "??"
+    else:
+        if amp > 7.0: return 0, {"filter": "?%.1f%%??" % amp, "amp": round(amp,2)}, "??"
+    if p < 4 or p > 80: return 0, {"filter": "??"}, "??"
+    if amt < 30000000: return 0, {"filter": "??"}, "??"
     
     if not kls or len(kls) < 25:
         return 35, {"chg": round(chg,2), "mode": "simplified"}, "??"
@@ -517,9 +561,14 @@ def score_v8i(quote, kls, market_idx_kls=None, ki=None):
     # V8i shape filters
     body_ratio = abs(close - kls[ki]["open"]) / (high - low) if high > low else 0
     upper_shadow = (high - max(close, kls[ki]["open"])) / (high - low) if high > low else 0
-    if cp < 0.55 or body_ratio < 0.25 or upper_shadow > 0.45:
-        return 0, {"filter": "K?????"}, "??"
-    if close < ma5:
+    lower_shadow = (min(close, kls[ki]["open"]) - low) / (high - low) if high > low else 0
+    if is_oversold_market:
+        # Oversold: very lenient, just need some reversal signal
+        pass  # Let all oversold stocks through the K-line check
+    else:
+        if cp < 0.55 or body_ratio < 0.25 or upper_shadow > 0.45:
+            return 0, {"filter": "K?????"}, "??"
+    if close < ma5 and not is_oversold_market:
         return 0, {"filter": "??MA5"}, "??"
     
     # Volume trend (match extract_date_data formula exactly)
@@ -531,7 +580,7 @@ def score_v8i(quote, kls, market_idx_kls=None, ki=None):
             first_half = sum(recent_vols[:half]) / half if half > 0 else 0
             second_half = sum(recent_vols[half:]) / (len(recent_vols) - half) if len(recent_vols) - half > 0 else 0
             if first_half > 0: vt = (second_half - first_half) / first_half * 100
-    if vt < -5: return 0, {"filter": "?????"}, "??"
+    if vt < -5 and not is_oversold_market: return 0, {"filter": "??"}, "??"
     
     # RSI(6)
     gains = []; losses = []
@@ -564,50 +613,81 @@ def score_v8i(quote, kls, market_idx_kls=None, ki=None):
     amt_yi = amt_val / 1e8
     
     # ---- IMPROVED FILTERS (sim_v8i.py exact) ----
-    if rsi6 < 45 or rsi6 > 72: return 0, {"filter": "RSI%d??" % int(rsi6)}, "??"
-    if vol_ratio < 1.0 or vol_ratio > 4.0: return 0, {"filter": "??%.1f??" % vol_ratio}, "??"
-    if green_days < 1: return 0, {"filter": "???"}, "??"
-    if dist_high < -8: return 0, {"filter": "???%.1f%%??" % dist_high}, "??"
-    if amt_val < 50000000: return 0, {"filter": "???%.0f???" % (amt_val/1e4)}, "??"
+    if is_oversold_market:
+        # Oversold: relaxed filters - stocks that fell need lower bars
+        if rsi6 < 20 or rsi6 > 72: return 0, {"filter": "RSI%d??" % int(rsi6)}, "??"
+        if vol_ratio < 0.3 or vol_ratio > 5.0: return 0, {"filter": "??%.1f??" % vol_ratio}, "??"
+        if rsi6 < 30 and dist_high > -15 and green_days > 0: return 0, {"filter": "????/??"}, "??"
+        if dist_high < -30: return 0, {"filter": "???%.1f%%??" % dist_high}, "??"
+        if amt_val < 20000000: return 0, {"filter": "???%.0f???" % (amt_val/1e4)}, "??"
+    else:
+        if rsi6 < 45 or rsi6 > 72: return 0, {"filter": "RSI%d??" % int(rsi6)}, "??"
+        if vol_ratio < 1.0 or vol_ratio > 4.0: return 0, {"filter": "??%.1f??" % vol_ratio}, "??"
+        if green_days < 1: return 0, {"filter": "???"}, "??"
+        if dist_high < -8: return 0, {"filter": "???%.1f%%??" % dist_high}, "??"
+        if amt_val < 50000000: return 0, {"filter": "???%.0f???" % (amt_val/1e4)}, "??"
     
     # ---- TREND BONUS ----
     tbonus, tdetail, tconf = trend_bonus_v8(kls, ki)
     
-    # ---- Market state ----
-    market_label = "SIDEWAYS"
-    if market_idx_kls and len(market_idx_kls) >= 20:
-        idx_closes = [k["close"] for k in market_idx_kls[-20:]]
-        idx_ma20 = sum(idx_closes)/20
-        idx_ma60 = sum(k["close"] for k in market_idx_kls[-60:])/60 if len(market_idx_kls) >= 60 else idx_ma20
-        idx_close = market_idx_kls[-1]["close"]
-        idx_s5 = (idx_closes[-1] - idx_closes[-5])/idx_closes[-5]*100 if len(idx_closes) >= 5 else 0
-        is_bull = idx_close >= idx_ma20
-        is_strong = is_bull and idx_s5 > 0.3
-        is_side = not is_bull and idx_close >= idx_ma60 if len(market_idx_kls) >= 60 else True
-        if is_strong: market_label = "BULLISH+"
-        elif is_bull: market_label = "BULLISH"
-        elif is_side: market_label = "SIDEWAYS"
-        else: market_label = "WEAK+"
+    # ---- Market state (already detected above) ----
     
     # ---- V8 SCORING (sim_v8i.py exact weights) ----
     score = 0
     
-    if 55 <= rsi6 <= 65: score += 8
-    elif 50 <= rsi6 <= 70: score += 5
-    else: score += 2
+    # Oversold bounce scoring: bonus for reversal signals
+    if is_oversold_market and chg < 0:
+        score += 20  # Base score for oversold candidates
+        if lower_shadow > 0.35: score += 10  # Long lower shadow = strong support
+        if cp > 0.5: score += 6
+        if chg > -2: score += 5  # Mild drop, not panic
+        elif chg > -4: score += 3
+        if vol_ratio > 1.2: score += 5  # Volume = capitulation
+        if close > ma5: score += 4  # Above MA5 is good
+        # Bonus for oversold RSI
+        if 25 <= rsi6 <= 40: score += 6  # Oversold sweet spot
     
-    if 1.3 <= vol_ratio <= 2.5: score += 7
-    elif 1.0 <= vol_ratio <= 3.0: score += 4
-    else: score += 1
+    # RSI sweet spot
+    if is_oversold_market and chg < 0:
+        if 25 <= rsi6 <= 45: score += 6  # Oversold RSI is a feature
+        elif 45 <= rsi6 <= 55: score += 4
+        elif rsi6 < 25: score += 3  # Extremely oversold
+    else:
+        if 55 <= rsi6 <= 65: score += 8
+        elif 50 <= rsi6 <= 70: score += 5
+        else: score += 2
     
-    if dist_high >= -1: score += 5
-    elif dist_high >= -3: score += 3
-    elif dist_high >= -5: score += 1
+    # Volume ratio
+    if is_oversold_market and chg < 0:
+        if 0.5 <= vol_ratio <= 1.5: score += 5  # Stabilization volume
+        elif vol_ratio > 1.5: score += 4  # Elevated = attention
+        elif vol_ratio < 0.5: score += 2  # Very low volume
+    else:
+        if 1.3 <= vol_ratio <= 2.5: score += 7
+        elif 1.0 <= vol_ratio <= 3.0: score += 4
+        else: score += 1
     
+    # Dist from high
+    if is_oversold_market and chg < 0:
+        if dist_high >= -5: score += 4
+        elif dist_high >= -15: score += 3
+        elif dist_high >= -25: score += 1  # Deep drop = potential bounce
+    else:
+        if dist_high >= -1: score += 5
+        elif dist_high >= -3: score += 3
+        elif dist_high >= -5: score += 1
+    
+    # Above MA20
     if close > ma20: score += 4
+    elif is_oversold_market and close > ma20 * 0.9: score += 2  # Near MA20
     
-    if 2.5 <= chg <= 4.5: score += 5
-    elif 1.5 <= chg <= 5: score += 3
+    # Change quality
+    if is_oversold_market and chg < 0:
+        if chg > -1: score += 5  # Nearly flat = stabilization
+        elif chg > -3: score += 3
+    else:
+        if 2.5 <= chg <= 4.5: score += 5
+        elif 1.5 <= chg <= 5: score += 3
     
     if ma5 > ma10 > ma20: score += 4
     elif ma5 > ma10: score += 2
@@ -641,23 +721,24 @@ def score_v8i(quote, kls, market_idx_kls=None, ki=None):
     
     # ---- ADVICE (with oversold bounce) ----
     advice = "HOLD"
-    if tconf >= 2 and mom5 > 4 and market_label in ("BULLISH+", "BULLISH"):
-        advice = "????"
+    if is_oversold_market and chg < 0 and tconf >= -1 and score >= 20:
+        advice = "超跌反弹"
+    elif tconf >= 2 and mom5 > 4 and market_label in ("BULLISH+", "BULLISH"):
+        advice = "强烈买入"
     elif tconf >= 1 and mom5 > 1 and market_label in ("BULLISH+", "BULLISH", "SIDEWAYS"):
-        advice = "??"
-    elif tconf >= 2 and market_label in ("WEAK+", "SIDEWAYS"):
-        advice = "????"
+        advice = "买入"
     elif tconf >= 0 and mom5 > -1 and market_label in ("BULLISH+", "BULLISH", "SIDEWAYS", "WEAK+"):
-        advice = "????"
+        advice = "谨慎买入"
+    elif is_oversold_market and tconf >= -2 and score >= 20:
+        advice = "超跌反弹"
     elif market_label in ("BULLISH+", "BULLISH"):
-        advice = "??"
+        advice = "观望"
     else:
-        return 0, {"filter": "??/?????"}, "??"
-    
+        return 0, {"filter": "市场/趋势不符"}, "观望"
     # ---- Market bully bonus ----
-    if market_label == "BULLISH+" and advice in ("????", "??"):
+    if market_label == "BULLISH+" and advice in ("??", "??"):
         score += 4
-    if market_label == "BULLISH" and advice == "????":
+    if market_label == "BULLISH" and advice == "??":
         score += 2
     
     # ---- DYNAMIC TP/SL (sim_v8i.py exact) ----
@@ -671,23 +752,24 @@ def score_v8i(quote, kls, market_idx_kls=None, ki=None):
     elif atr_pct > 3: dtp, dsl, mhold = 6.0, -5.0, 3
     else: dtp, dsl, mhold = 5.0, -4.0, 4
     
-    if advice == "????": dtp = max(4.0, dtp-1); mhold = min(6, mhold+2)
+    if advice == "??": dtp = max(4.0, dtp-1); mhold = min(6, mhold+2)
     elif advice == "??": mhold = min(5, mhold+1)
-    elif advice == "????": dtp = min(7.0, dtp+1); dsl = max(-3.0, dsl+1)
-    elif advice == "????": dtp = min(4.0, dtp-2); dsl = max(-2.5, dsl+2); mhold = min(2, mhold-1)
+    elif advice == "??": dtp = min(7.0, dtp+1); dsl = max(-3.0, dsl+1)
+    elif advice == "??": dtp = min(4.0, dtp-2); dsl = max(-2.5, dsl+2); mhold = min(2, mhold-1)
     
-    if market_label == "BULLISH+" and advice in ("????", "??"):
+    if market_label == "BULLISH+" and advice in ("??", "??"):
         dsl -= 0.5; mhold = min(7, mhold+1)
-    if market_label == "BULLISH" and advice == "????":
+    if market_label == "BULLISH" and advice == "??":
         mhold = min(6, mhold+1)
     
     # Position sizing
-    if advice == "????": pos_pct = 100
+    if advice == "??": pos_pct = 100
     elif advice == "??": pos_pct = 90
-    elif advice == "????": pos_pct = 60
-    elif advice == "????": pos_pct = 25
+    elif advice == "??": pos_pct = 60
+    elif advice == "??": pos_pct = 25
     elif advice == "??": pos_pct = 30
     else: pos_pct = 30
+    if vol_reduce: pos_pct = min(pos_pct, 25)
     
     tp_price = round(close * (1 + dtp/100), 2)
     sl_price = round(close * (1 + dsl/100), 2)
@@ -698,7 +780,7 @@ def score_v8i(quote, kls, market_idx_kls=None, ki=None):
         "rsi": round(rsi6, 0), "vol_ratio": round(vol_ratio, 1),
         "dist_high": round(dist_high, 1),
         "ma5": round(ma5, 2), "ma10": round(ma10, 2), "ma20": round(ma20, 2),
-        "ma_arrange": "????" if ma5 > ma10 > ma20 else ("??" if ma5 > ma10 else "??"),
+        "ma_arrange": "??" if ma5 > ma10 > ma20 else ("??" if ma5 > ma10 else "??"),
         "vol_trend": round(vt, 1),
         "trend": tdetail, "trend_conf": tconf,
         "mom5": round(mom5, 1),
@@ -1046,6 +1128,14 @@ def screen(ms=35, topn=50, date_str=None):
         # Pre-fetch index klines for market state (filtered to target date)
         idx_kls_raw = fetch_kline_sina("sh000001", 200)
         idx_kls_hist = [k for k in (idx_kls_raw or []) if k["day"] <= date_str]
+        
+        # Detect oversold market for pre-filter
+        _idx_oversold = False
+        if idx_kls_hist and len(idx_kls_hist) >= 5:
+            _ic = [k["close"] for k in idx_kls_hist[-20:]]
+            _drop5 = (_ic[-1] - _ic[-5])/_ic[-5]*100 if len(_ic) >= 5 else 0
+            _idx_oversold = _drop5 < -1.0
+        
         results=[]
         for code,name in stocks:
             if code not in kline_data: continue
@@ -1055,14 +1145,17 @@ def screen(ms=35, topn=50, date_str=None):
             p = dd["close"]; yc = dd.get("prev_close", 0)
             if yc <= 0: continue
             chg = (p - yc) / yc * 100
-            # ---- FAST pre-filter (same basic criteria as live) ----
-            if chg < 1.0 or chg > 5.5: continue
+            # ---- FAST pre-filter (looser for oversold markets) ----
+            if _idx_oversold:
+                if chg < -4.0 or chg > 5.5: continue
+            else:
+                if chg < 1.0 or chg > 5.5: continue
             amp_v = dd.get("amp", 0)
-            if amp_v > 6.0: continue
-            if dd.get("close_position", 0) < 0.55: continue
+            if amp_v > 7.0: continue
+            if dd.get("close_position", 0) < 0.4: continue
             if p < 4 or p > 80: continue
             amt_v = dd.get("volume", 0) * p
-            if amt_v < 50000000: continue
+            if amt_v < 30000000: continue
             # ---- V8i CANONICAL SCORING (score_v8i) ----
             kls = kline_data[code]
             
@@ -1094,17 +1187,17 @@ def screen(ms=35, topn=50, date_str=None):
             
             # Buy timing
             buy_timing = "??14:30???"
-            if advice == "????" and market_label == "BULLISH+":
+            if advice == "??" and market_label == "BULLISH+":
                 buy_timing = "???????????"
-            elif advice == "????":
+            elif advice == "??":
                 buy_timing = "???????????"
             elif advice == "??" and market_label == "BULLISH+":
                 buy_timing = "?????????????"
             elif advice == "??":
                 buy_timing = "????14:30???"
-            elif advice == "????":
+            elif advice == "??":
                 buy_timing = "????15??????"
-            elif advice == "????":
+            elif advice == "??":
                 buy_timing = "???????????????????"
             elif advice == "??":
                 buy_timing = "??????????"

@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 exec(open("app.py", "r", encoding="utf-8").read().split("class ThreadingHTTPServer")[0])
 
 test_kls = fetch_kline_sina("sh600000", 120)
-trading_days = [k["day"] for k in test_kls if k["day"] >= "2026-03-02" and k["day"] <= "2026-06-05"]
+trading_days = [k["day"] for k in test_kls if k["day"] >= "2025-06-01" and k["day"] <= "2026-06-12"]
 print("Total trading days: {}".format(len(trading_days)))
 
 idx_kls = fetch_kline_sina("sh000001", 120)
@@ -196,15 +196,15 @@ def trend_bonus_v8(kls, ki):
     
     return bonus, ",".join(details), confidence
 
-CAPITAL = 30000; TOP_N = 1
+CAPITAL = 30000; TOP_N = 1  # 本金3万
 
 stocks = get_stocks(); codes = [c for c, _ in stocks]; name_map = {c: n for c, n in stocks}
 print("Fetching kline data for {} stocks...".format(len(codes)))
-all_klines = get_historical_data(codes, "2026-02-15", datalen=80)
+all_klines = get_historical_data(codes, "2025-05-15", datalen=120)  # 一年数据
 print("Got {} stocks".format(len(all_klines)))
 
 print("\n" + "=" * 70)
-print("  V8i 近半年回测 (2025.12 ~ 2026.06)")
+print("  V8i+ 一年回测 (2025.06 ~ 2026.06) 超跌反弹+移动止盈")
 print("  本金: 30,000 | Top 1 | 自适应止盈止损 | 动态仓位")
 print("=" * 70)
 
@@ -265,6 +265,40 @@ for di, day in enumerate(trading_days):
         else:
             h["hold_days"] = hold_days + 1
     
+    # ---- OVERSOLD PRE-CHECK (before market) ----
+    ma20_idx_early = get_idx_ma(idx_map, day, 20)
+    ma60_idx_early = get_idx_ma(idx_map, day, 60)
+    idx_close_early = idx_map[day]["close"] if day in idx_map else 0
+    idx_slope5_early = get_idx_slope(idx_map, day, 5)
+    
+    is_bullish_early = ma20_idx_early and idx_close_early >= ma20_idx_early
+    is_strong_early = is_bullish_early and idx_slope5_early > 0.3
+    is_sideways_early = not is_bullish_early and ma60_idx_early and idx_close_early >= ma60_idx_early
+    
+    ml_early = ""
+    if is_strong_early: ml_early = "BULLISH+"
+    elif is_bullish_early: ml_early = "BULLISH"
+    elif is_sideways_early: ml_early = "SIDEWAYS"
+    elif ma60_idx_early and idx_close_early >= ma60_idx_early * 0.97 and idx_slope5_early > 0: ml_early = "WEAK+"
+    else: ml_early = "BEAR"
+    
+    is_oversold_early = (ml_early in ("WEAK+", "SIDEWAYS") and idx_slope5_early < -1.0) or (ml_early == "BEAR" and ma60_idx_early and idx_close_early >= ma60_idx_early * 0.95 and idx_slope5_early < -1.5)
+    
+    if is_oversold_early and cash < CAPITAL * 0.15:
+        # Sort holdings by profit (weakest first), sell enough to free ~15% capital
+        sorted_holds = sorted(holdings[:], key=lambda h: (dd[h["code"]]["close"] - h["buy_price"]) / h["buy_price"] * 100 if h["code"] in dd else 999)
+        for h in sorted_holds:
+            if h["code"] not in dd: continue
+            d = dd[h["code"]]
+            pnl_pct = (d["close"] - h["buy_price"]) / h["buy_price"] * 100
+            hold_days_os = h.get("hold_days", 1)
+            sp = d["close"]
+            cash += h["shares"] * sp
+            pnl = round(h["shares"] * sp - h["cost"], 2)
+            log.append({"day": day, "act": "卖出", "code": h["code"], "name": h["name"], "sp": round(sp, 2), "pnl": pnl, "pct": round(pnl_pct, 2), "r": "超跌调仓", "held": hold_days_os})
+            holdings.remove(h)
+            if cash >= CAPITAL * 0.15: break
+    
     # ---- MARKET ----
     ma20_idx = get_idx_ma(idx_map, day, 20)
     ma60_idx = get_idx_ma(idx_map, day, 60)
@@ -291,6 +325,15 @@ for di, day in enumerate(trading_days):
         log.append({"day": day, "act": "信息", "reason": "弱势40%仓"})
     else:
         can_buy = False; market_label = "BEAR"
+    
+    # Oversold market detection (for bounce plays)
+    is_oversold = (market_label in ("WEAK+", "SIDEWAYS") and idx_slope5 < -1.0) or (market_label == "BEAR" and ma60_idx and idx_close >= ma60_idx * 0.95 and idx_slope5 < -1.5)
+    if is_oversold and market_label == "BEAR":
+        can_buy = True; market_pos = 0.25; market_label = "WEAK+"
+        log.append({"day": day, "act": "信息", "reason": "超跌反弹25%仓"})
+    elif is_oversold and market_label in ("WEAK+", "SIDEWAYS"):
+        market_pos = min(market_pos, 0.25)
+        log.append({"day": day, "act": "信息", "reason": "超跌反弹降仓25%"})
         log.append({"day": day, "act": "跳过", "reason": "大盘弱势"})
     
     if can_buy:
@@ -307,17 +350,26 @@ for di, day in enumerate(trading_days):
             chg = (close - prev_close) / prev_close * 100
             
             # ---- HARD FILTERS ----
-            if chg < 1.0 or chg > 5.5: continue
+            if is_oversold:
+                if chg < -4.0 or chg > 5.5: continue
+            else:
+                if chg < 1.0 or chg > 5.5: continue
             amp = d.get("amp", 0)
-            if amp > 6.0: continue
+            if is_oversold:
+                if amp > 9.0: continue
+            else:
+                if amp > 6.0: continue
             cp = d.get("close_position", 1)
             br = d.get("body_ratio", 0)
             us = d.get("upper_shadow", 0)
-            if cp < 0.55 or br < 0.25 or us > 0.45: continue
-            if close < d.get("ma5", 0): continue
+            if is_oversold:
+                if cp < 0.3: continue
+            else:
+                if cp < 0.55 or br < 0.25 or us > 0.45: continue
+            if close < d.get("ma5", 0) and not is_oversold: continue
             if close < 4 or close > 80: continue
             vt = d.get("vol_trend", 0) or 0
-            if vt < -5: continue
+            if vt < -5 and not is_oversold: continue
             
             closes_list = [k["close"] for k in kls[max(0,ki-25):ki+1]]
             highs_list = [k["high"] for k in kls[max(0,ki-25):ki+1]]
@@ -351,39 +403,79 @@ for di, day in enumerate(trading_days):
             amt_yi = amt_val / 1e8
             
             # ---- IMPROVED FILTERS ----
-            if rsi6 < 45 or rsi6 > 72: continue  # Tighter RSI cap
-            if vol_ratio < 1.0 or vol_ratio > 4.0: continue
-            if green_days < 1: continue
-            if dist_high < -8: continue
-            if amt_val < 50000000: continue
+            if is_oversold:
+                # Oversold: relaxed filters for bounce candidates
+                if rsi6 < 20 or rsi6 > 72: continue
+                if vol_ratio < 0.3 or vol_ratio > 5.0: continue
+                if rsi6 < 30 and dist_high > -15 and green_days > 0: continue
+                if dist_high < -30: continue
+                if amt_val < 20000000: continue
+            else:
+                if rsi6 < 45 or rsi6 > 72: continue
+                if vol_ratio < 1.0 or vol_ratio > 4.0: continue
+                if green_days < 1: continue
+                if dist_high < -8: continue
+                if amt_val < 50000000: continue
             
             # ---- TREND BONUS (V8 + new indicators) ----
             tbonus, tdetail, tconf = trend_bonus_v8(kls, ki)
             
             # ---- V8 SCORING (proven foundation) ----
             score = 0
+            if is_oversold and chg < 0:
+                # Oversold bounce: big bonus for reversal signals
+                score += 20
+                ls = d.get("lower_shadow", 0)
+                if ls > 0.35: score += 10  # long lower shadow = strong support
+                if cp > 0.5: score += 6
+                if chg > -2: score += 5  # mild drop, not panic
+                elif chg > -4: score += 3
+                if d.get("vol_ratio", 0) > 1.2: score += 5  # volume = capitulation
+                if close > d.get("ma5", 0): score += 4  # above MA5 is good
+                # Bonus for oversold RSI
+                if 25 <= rsi6 <= 40: score += 6  # oversold sweet spot
             
             # RSI sweet spot
-            if 55 <= rsi6 <= 65: score += 8
-            elif 50 <= rsi6 <= 70: score += 5
-            else: score += 2
+            if is_oversold and chg < 0:
+                if 25 <= rsi6 <= 45: score += 6  # oversold RSI is a feature
+                elif 45 <= rsi6 <= 55: score += 4
+                elif rsi6 < 25: score += 3  # extremely oversold
+            else:
+                if 55 <= rsi6 <= 65: score += 8
+                elif 50 <= rsi6 <= 70: score += 5
+                else: score += 2
             
             # Volume ratio
-            if 1.3 <= vol_ratio <= 2.5: score += 7
-            elif 1.0 <= vol_ratio <= 3.0: score += 4
-            else: score += 1
+            if is_oversold and chg < 0:
+                if 0.5 <= vol_ratio <= 1.5: score += 5  # stabilization volume
+                elif vol_ratio > 1.5: score += 4  # elevated = attention
+                elif vol_ratio < 0.5: score += 2  # very low volume
+            else:
+                if 1.3 <= vol_ratio <= 2.5: score += 7
+                elif 1.0 <= vol_ratio <= 3.0: score += 4
+                else: score += 1
             
             # Dist from high
-            if dist_high >= -1: score += 5
-            elif dist_high >= -3: score += 3
-            elif dist_high >= -5: score += 1
+            if is_oversold and chg < 0:
+                if dist_high >= -5: score += 4
+                elif dist_high >= -15: score += 3
+                elif dist_high >= -25: score += 1  # deep drop = potential bounce
+            else:
+                if dist_high >= -1: score += 5
+                elif dist_high >= -3: score += 3
+                elif dist_high >= -5: score += 1
             
             # Above MA20
             if d.get("ma20") and close > d["ma20"]: score += 4
+            elif is_oversold and close > d.get("ma20", 0) * 0.9: score += 2  # near MA20
             
             # Change quality
-            if 2.5 <= chg <= 4.5: score += 5
-            elif 1.5 <= chg <= 5: score += 3
+            if is_oversold and chg < 0:
+                if chg > -1: score += 5  # nearly flat = stabilization
+                elif chg > -3: score += 3
+            else:
+                if 2.5 <= chg <= 4.5: score += 5
+                elif 1.5 <= chg <= 5: score += 3
             
             # Trend alignment
             ma5_ = d.get("ma5",0); ma10_ = d.get("ma10",0); ma20_ = d.get("ma20",0)
@@ -427,12 +519,16 @@ for di, day in enumerate(trading_days):
             
             # ---- ADVICE ----
             advice = "HOLD"
-            if tconf >= 2 and mom5 > 4 and market_label in ("BULLISH+", "BULLISH"):
+            if is_oversold and chg < 0 and tconf >= -1 and score >= 20:
+                advice = "超跌反弹"
+            elif tconf >= 2 and mom5 > 4 and market_label in ("BULLISH+", "BULLISH"):
                 advice = "强烈买入"
             elif tconf >= 1 and mom5 > 1 and market_label in ("BULLISH+", "BULLISH", "SIDEWAYS"):
                 advice = "买入"
             elif tconf >= 0 and mom5 > -1 and market_label in ("BULLISH+", "BULLISH", "SIDEWAYS", "WEAK+"):
                 advice = "谨慎买入"
+            elif is_oversold and tconf >= -2 and score >= 20:
+                advice = "超跌反弹"
             elif market_label in ("BULLISH+", "BULLISH"):
                 advice = "观望"
             else:
@@ -445,14 +541,22 @@ for di, day in enumerate(trading_days):
             atr14 = atr_sum / 14 if ki >= 13 else 2
             atr_pct = atr14 / close * 100
             
-            if atr_pct > 5:
+            if is_oversold and chg < 0:
+                # Oversold: tighter SL (already down), modest TP
+                dyn_tp = 4.0; dyn_sl = -3.5; max_hold = 2
+            elif atr_pct > 5:
                 dyn_tp = 7.0; dyn_sl = -6.0; max_hold = 2
             elif atr_pct > 3:
                 dyn_tp = 6.0; dyn_sl = -5.0; max_hold = 3
             else:
                 dyn_tp = 5.0; dyn_sl = -4.0; max_hold = 4
             
-            if advice == "强烈买入":
+            if advice == "超跌反弹":
+                # Oversold: keep tight TP/SL, short hold
+                dyn_tp = min(4.5, dyn_tp)
+                dyn_sl = max(-3.0, dyn_sl)
+                max_hold = min(2, max_hold)
+            elif advice == "强烈买入":
                 dyn_tp = max(4.0, dyn_tp - 1)
                 max_hold = min(6, max_hold + 2)
             elif advice == "买入":
@@ -478,7 +582,9 @@ for di, day in enumerate(trading_days):
         
         if picks and cash > 0:
             for code, name, score, close, chg, advice, dyn_tp, dyn_sl, max_hold, atr_pct, gd, rsi_v, vr_v, tdetail, tconf, mom5 in picks:
-                if advice == "强烈买入":
+                if advice == "超跌反弹":
+                    pos_mult = min(0.30, market_pos * 0.8)
+                elif advice == "强烈买入":
                     pos_mult = min(1.0, market_pos * 1.0)
                 elif advice == "买入":
                     pos_mult = min(1.0, market_pos * 0.9)
@@ -488,7 +594,8 @@ for di, day in enumerate(trading_days):
                     pos_mult = min(0.3, market_pos * 0.3)
                 
                 per = cash * pos_mult
-                if close > 0 and per >= close * 100:
+                min_lot = close * 100
+                if close > 0 and (per >= min_lot or (is_oversold and per >= min_lot * 0.5)):
                     shares = int(per / close / 100) * 100
                     if shares >= 100:
                         cost = shares * close
