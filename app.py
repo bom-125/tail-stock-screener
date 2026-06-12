@@ -1636,8 +1636,9 @@ class H(BaseHTTPRequestHandler):
         self.do_GET()
 
     def do_GET(self):
-        if self.path in ("/","/index.html","/m"):
-            if self.path=="/m":
+        _path = urlparse(self.path).path
+        if _path in ("/","/index.html","/m","/mobile"):
+            if _path in ("/m","/mobile"):
                 mp=os.path.join(os.path.dirname(os.path.abspath(__file__)),"static","m.html")
                 with open(mp,"r",encoding="utf-8") as mf:
                     b=mf.read().encode("utf-8")
