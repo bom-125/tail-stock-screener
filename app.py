@@ -130,7 +130,7 @@ def get_historical_data(codes, target_date, datalen=80):
         sym=("sh" if code.startswith("6") else "sz")+code
         kls=fetch_kline_sina(sym, datalen)
         return code,kls
-    with ThreadPoolExecutor(max_workers=30) as ex:
+    with ThreadPoolExecutor(max_workers=15) as ex:
         futs={ex.submit(worker,c):c for c in codes}
         for i,fut in enumerate(as_completed(futs)):
             code,kls=fut.result()
@@ -962,7 +962,7 @@ def market_state_ok():
         return closes[-1] >= ma20
     except: return True
 
-def screen(ms=50, topn=50, date_str=None):
+def screen(ms=35, topn=50, date_str=None):
     stocks=get_stocks()
     codes=[c for c,_ in stocks]
     if date_str:
@@ -1197,7 +1197,7 @@ def screen(ms=50, topn=50, date_str=None):
             sym=("sh" if code.startswith("6") else "sz")+code
             return code, fetch_kline_sina(sym, 60)
         
-        with ThreadPoolExecutor(max_workers=30) as ex:
+        with ThreadPoolExecutor(max_workers=15) as ex:
             futs={ex.submit(fetch_one,c):c for c,*_ in [x for x in candidates[:300]]}
             for i,fut in enumerate(as_completed(futs)):
                 code,kls=fut.result()
@@ -1272,7 +1272,7 @@ class H(BaseHTTPRequestHandler):
             self.wfile.write(b)
         elif self.path.startswith("/api/scan"):
             qs=parse_qs(urlparse(self.path).query)
-            ms=int(qs.get("min_score",[50])[0])
+            ms=int(qs.get("min_score",[35])[0])
             date_str=qs.get("date",[None])[0]
             t0=time.time()
             try:
@@ -1326,7 +1326,7 @@ if __name__=="__main__":
     p=argparse.ArgumentParser()
     p.add_argument("--serve",action="store_true")
     p.add_argument("--port",type=int,default=5000)
-    p.add_argument("--min-score",type=int,default=50)
+    p.add_argument("--min-score",type=int,default=35)
     p.add_argument("--date",type=str,default=None)
     a=p.parse_args()
     os.environ["HTTP_PROXY"]=""
