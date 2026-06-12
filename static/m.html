@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>尾盘选股 V8i+</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:sans-serif;background:#111;color:#ddd;font-size:14px;padding:8px}
+h1{font-size:16px;color:#4fc3f7;margin-bottom:4px}
+.sub{font-size:11px;color:#888}
+.tabs{display:flex;margin:10px 0;gap:2px}
+.tab{flex:1;padding:8px;text-align:center;background:#222;border:none;color:#888;font-size:13px;font-weight:bold;cursor:pointer;border-radius:6px 6px 0 0}
+.tab.on{background:#333;color:#4fc3f7;border-bottom:2px solid #4fc3f7}
+.panel{display:none;background:#1a1a1a;padding:10px;border-radius:0 0 8px 8px}
+.panel.on{display:block}
+.btn{width:100%;padding:10px;background:#4fc3f7;color:#000;border:none;border-radius:6px;font-weight:bold;font-size:14px;margin:6px 0}
+.btn:active{opacity:.7}
+.btn2{padding:8px 14px;background:#333;color:#ddd;border:none;border-radius:6px;font-size:12px;margin:4px 2px}
+input,select{width:100%;padding:8px;margin:4px 0;background:#222;border:1px solid #333;color:#ddd;border-radius:6px;font-size:14px}
+input:focus{border-color:#4fc3f7}
+.card{background:#222;padding:10px;margin:6px 0;border-radius:8px;border-left:3px solid #4fc3f7}
+.card .code{font-size:15px;color:#4fc3f7;font-weight:bold}
+.card .name{font-size:12px;color:#888;margin-left:6px}
+.card .row{display:flex;justify-content:space-between;font-size:12px;margin:3px 0}
+.card .price{font-size:18px;font-weight:bold}
+.card .pnl{font-weight:bold}
+.green{color:#66bb6a}
+.red{color:#ef5350}
+.orange{color:#ffa726}
+.signal{padding:4px 8px;border-radius:4px;font-size:11px;margin:2px 0;font-weight:bold}
+.sig-danger{background:#3d1515;color:#ef5350}
+.sig-warn{background:#3d2e15;color:#ffa726}
+.sig-ok{background:#153d15;color:#66bb6a}
+table{width:100%;border-collapse:collapse;font-size:12px}
+td,th{padding:6px 4px;border-bottom:1px solid #333;text-align:left}
+.alert-item{background:#222;padding:8px;margin:4px 0;border-radius:6px;font-size:12px}
+.loader{text-align:center;padding:20px;color:#888}
+.empty{text-align:center;padding:30px;color:#555;font-size:13px}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<h1>尾盘选股 V8i+</h1>
+<div class="sub" id="mkt-info">--</div>
+
+<div class="tabs">
+  <button class="tab on" onclick="switchTab(0)">持仓</button>
+  <button class="tab" onclick="switchTab(1)">扫描</button>
+  <button class="tab" onclick="switchTab(2)">提醒</button>
+</div>
+
+<div class="panel on" id="p0">
+  <button class="btn" onclick="loadHoldings()">刷新持仓分析</button>
+  <div id="add-f" class="hidden">
+    <input placeholder="代码" id="ac"><input placeholder="名称" id="an">
+    <input placeholder="买入价" id="ap" type="number" step="0.01">
+    <input placeholder="股数" id="as" type="number" step="100">
+    <input placeholder="日期" id="ad" type="date">
+    <button class="btn2" onclick="addH()">确认</button><button class="btn2" onclick="toggleAdd()">取消</button>
+  </div>
+  <button class="btn2" onclick="toggleAdd()">+ 添加</button>
+  <div id="holdings"></div>
+</div>
+
+<div class="panel" id="p1">
+  <input type="date" id="td"><br>
+  <select id="ms"><option value="30">30分</option><option value="35" selected>35分</option><option value="40">40分</option></select>
+  <button class="btn" onclick="doScan()">开始扫描</button>
+  <div id="scan-status"></div>
+  <div id="scan-res"></div>
+</div>
+
+<div class="panel" id="p2">
+  <button class="btn" onclick="loadAlerts()">刷新提醒</button>
+  <div id="alerts"></div>
+</div>
+
+<div class="loader hidden" id="loader">加载中...</div>
+
+<script>
+var T={};
+T.getLatestTradeDay=function(d){d=new Date(d);var day=d.getDay();if(day===0)d.setDate(d.getDate()-2);else if(day===6)d.setDate(d.getDate()-1);return d.toISOString().split("T")[0]};
+T.td=T.getLatestTradeDay(new Date());
+
+function $(id){return document.getElementById(id)}
+
+function switchTab(n){
+  for(var i=0;i<3;i++){$("p"+i).className="panel"+(i===n?" on":"");document.querySelectorAll(".tab")[i].className="tab"+(i===n?" on":"")}
+}
+
+function toggleAdd(){$("add-f").classList.toggle("hidden")}
+
+function addH(){
+  var c=$("ac").value.trim(),n=$("an").value.trim(),p=parseFloat($("ap").value),s=parseInt($("as").value),d=$("ad").value;
+  if(!c||!n||!p||!s){alert("请填写完整");return}
+  var x=new XMLHttpRequest();x.open("POST","/api/holdings",true);
+  x.setRequestHeader("Content-Type","application/json");
+  x.onload=function(){if(x.status===200){toggleAdd();loadHoldings()}else alert("失败")};
+  x.send(JSON.stringify({code:c,name:n,buy_price:p,shares:s,buy_date:d}));
+}
+
+function delH(code){if(!confirm("删除 "+code+"?"))return;var x=new XMLHttpRequest();x.open("DELETE","/api/holdings?code="+code,true);x.onload=function(){loadHoldings()};x.send()}
+
+function showLoader(){$("loader").classList.remove("hidden")}
+function hideLoader(){$("loader").classList.add("hidden")}
+
+function loadHoldings(){
+  showLoader();$("holdings").innerHTML="";
+  var x=new XMLHttpRequest();x.open("GET","/api/holdings",true);x.timeout=10000;
+  x.onload=function(){
+    try{
+      var h=JSON.parse(x.responseText);
+      if(!h.length){$("holdings").innerHTML='<div class="empty">暂无持仓</div>';hideLoader();return}
+      var ax=new XMLHttpRequest();ax.open("GET","/api/holdings/analyze",true);ax.timeout=30000;
+      ax.onload=function(){
+        hideLoader();
+        try{
+          var d=JSON.parse(ax.responseText),r=d.holdings||[],html="";
+          for(var i=0;i<r.length;i++){
+            var o=r[i],pnl=o.pnl_pct||0,pc=pnl>=0?"green":"red";
+            html+='<div class="card"><div><span class="code">'+o.code+'</span><span class="name">'+o.name+'</span></div>';
+            html+='<div class="row"><span>现价</span><span class="price '+pc+'">'+(o.cur_price||0).toFixed(2)+'</span></div>';
+            html+='<div class="row"><span>盈亏</span><span class="pnl '+pc+'">'+(pnl>=0?"+":"")+pnl.toFixed(2)+'% ('+(o.pnl_amt||0).toFixed(0)+'元)</span></div>';
+            html+='<div class="row"><span>止损</span><span class="red">'+(o.sl_price||0).toFixed(2)+'</span><span>止盈</span><span class="green">'+(o.tp_price||0).toFixed(2)+'</span></div>';
+            if(o.sell_signals)for(var j=0;j<o.sell_signals.length;j++){
+              var s=o.sell_signals[j],cls=s.indexOf("触发")>=0||s.indexOf("止损")>=0?"sig-danger":s.indexOf("走弱")>=0?"sig-warn":"sig-ok";
+              html+='<div class="signal '+cls+'">'+s+'</div>';
+            }
+            html+='<div style="margin-top:4px;font-size:12px">建议: '+o.advice+' | '+o.reason+'</div>';
+            html+='<button class="btn2" onclick="delH(\''+o.code+'\')" style="background:#5d1515;color:#ef5350;margin-top:4px">删除</button></div>';
+          }
+          $("holdings").innerHTML=html;
+        }catch(e){$("holdings").innerHTML='<div class="empty">解析失败</div>';hideLoader()}
+      };
+      ax.onerror=function(){hideLoader();$("holdings").innerHTML='<div class="empty">超时</div>'};
+      ax.send();
+    }catch(e){hideLoader()}
+  };
+  x.onerror=function(){hideLoader()};
+  x.send();
+}
+
+var _scanTimer=null;
+function doScan(){
+  var ms=$("ms").value,td=$("td").value,isToday=td===T.td;
+  var btn=document.querySelector("#p1 .btn");btn.disabled=true;btn.textContent="扫描中...";
+  $("scan-status").innerHTML="";$("scan-res").innerHTML="";showLoader();
+  if(_scanTimer)clearInterval(_scanTimer);
+  var url="/api/scan?min_score="+ms+"&async=1";
+  if(!isToday)url+="&date="+td;
+  var x=new XMLHttpRequest();x.open("GET",url,true);x.timeout=10000;
+  var poll=0,done=false;
+  _scanTimer=setInterval(function(){
+    poll++;
+    var px=new XMLHttpRequest();px.open("GET","/api/progress",true);px.timeout=3000;
+    px.onload=function(){
+      try{
+        var p=JSON.parse(px.responseText);
+        if(p.msg)$("scan-status").textContent=p.msg;
+        if(p.status==="done"&&p.results&&!done){
+          done=true;clearInterval(_scanTimer);hideLoader();
+          btn.disabled=false;btn.textContent="开始扫描";
+          var html='<table><tr><th>#</th><th>代码</th><th>名称</th><th>评分</th><th>涨跌</th><th>建议</th></tr>';
+          for(var i=0;i<p.results.length;i++){
+            var r=p.results[i],chg=r.change_pct||0;
+            html+='<tr><td>'+(i+1)+'</td><td><b>'+r.code+'</b></td><td>'+r.name+'</td><td>'+r.score+'</td>';
+            html+='<td class="'+(chg>=0?"green":"red")+'">'+(chg>=0?"+":"")+chg.toFixed(2)+'%</td>';
+            html+='<td>'+r.advice+'</td></tr>';
+          }
+          html+='</table>';$("scan-res").innerHTML=html;
+        }
+        if(p.status==="error"&&!done){done=true;clearInterval(_scanTimer);hideLoader();btn.disabled=false;btn.textContent="开始扫描";$("scan-status").textContent="错误: "+p.msg}
+        if(poll>120&&!done){done=true;clearInterval(_scanTimer);hideLoader();btn.disabled=false;btn.textContent="开始扫描";$("scan-status").textContent="超时"}
+      }catch(e){}
+    };
+    px.send();
+  },500);
+  x.send();
+}
+
+function loadAlerts(){
+  showLoader();
+  var x=new XMLHttpRequest();x.open("GET","/api/alerts",true);x.timeout=10000;
+  x.onload=function(){
+    hideLoader();
+    try{
+      var a=JSON.parse(x.responseText)||[],html="";
+      if(!a.length){$("alerts").innerHTML='<div class="empty">暂无提醒</div>';return}
+      for(var i=0;i<a.length;i++){
+        var o=a[i],tc=o.type.indexOf("止盈")>=0?"green":o.type.indexOf("止损")>=0?"red":"orange";
+        html+='<div class="alert-item"><b>'+o.time+'</b> <span class="'+tc+'">'+o.type+'</span> '+o.code+' '+o.name+' - '+o.msg+'</div>';
+      }
+      $("alerts").innerHTML=html;
+    }catch(e){$("alerts").innerHTML='<div class="empty">解析失败</div>'}
+  };
+  x.onerror=function(){hideLoader()};
+  x.send();
+}
+
+// Init
+$("td").value=T.td;
+$("mkt-info").textContent="本地 "+T.td;
+</script>
+</body>
+</html>

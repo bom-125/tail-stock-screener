@@ -1636,8 +1636,13 @@ class H(BaseHTTPRequestHandler):
         self.do_GET()
 
     def do_GET(self):
-        if self.path in ("/","/index.html"):
-            b=get_html().encode("utf-8") if isinstance(get_html(),str) else get_html()
+        if self.path in ("/","/index.html","/m"):
+            if self.path=="/m":
+                mp=os.path.join(os.path.dirname(os.path.abspath(__file__)),"static","m.html")
+                with open(mp,"r",encoding="utf-8") as mf:
+                    b=mf.read().encode("utf-8")
+            else:
+                b=get_html().encode("utf-8") if isinstance(get_html(),str) else get_html()
             self.send_response(200)
             self.send_header("Content-Type","text/html; charset=utf-8")
             self.send_header("Access-Control-Allow-Origin","*")
