@@ -1127,7 +1127,9 @@ def screen(ms=35, topn=50, date_str=None):
         return results[:topn]
     else:
         # Limit to top stocks for live scanning (symbol-sorted ~= importance)
-        scan_limit = len(stocks)  # full stock pool
+        # Scan limit: use env var SCAN_LIMIT for Railway (default 1000), or full pool locally
+        scan_limit = int(os.environ.get("SCAN_LIMIT", "1000"))
+        scan_limit = min(scan_limit, len(stocks))
         scan_stocks = stocks[:scan_limit]
         scan_codes = [c for c,_ in scan_stocks]
         PROGRESS["total"]=len(scan_stocks); PROGRESS["done"]=0; PROGRESS["msg"]="Fetching real-time quotes..."
