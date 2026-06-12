@@ -214,26 +214,51 @@ function addHolding(){
 function deleteHolding(code){if(!confirm("\u786e\u8ba4\u5220\u9664 "+code+"?"))return;var x=new XMLHttpRequest();x.open("DELETE","/api/holdings?code="+code,true);x.onload=function(){refreshHoldings()};x.onerror=function(){alert("\u5220\u9664\u5931\u8d25")};x.send()}
 
 function refreshHoldings(){
+  var btn=document.getElementById("refresh-btn");
+  if(btn){btn.disabled=true;btn.textContent="\u52a0\u8f7d\u4e2d...";}
+  var grid=document.getElementById("holdings-grid");
+  grid.innerHTML='<div class="empty-state">\u52a0\u8f7d\u4e2d...</div>';
+  setTimeout(function(){_doRefreshHoldings(btn)},50);
+}
+function _doRefreshHoldings(btn){
   var xhr=new XMLHttpRequest();
   xhr.open("GET","/api/holdings",true);
+  xhr.timeout=15000;
   xhr.onload=function(){
-    var holdings=JSON.parse(xhr.responseText);
-    var ax=new XMLHttpRequest();
-    ax.open("GET","/api/holdings/analyze",true);
-    ax.onload=function(){
-      var data=JSON.parse(ax.responseText);
-      var results=data.holdings||[];
-      document.getElementById("holding-count").textContent=results.length;
-      document.getElementById("total-value").textContent=(data.total_value||0).toLocaleString("zh-CN",{style:"currency",currency:"CNY"});
-      var pnl=data.total_pnl||0;
-      var pnlEl=document.getElementById("total-pnl");
-      pnlEl.textContent=(pnl>=0?"+":"")+pnl.toFixed(0)+"元";
-      pnlEl.style.color=pnl>=0?"var(--green)":"var(--red)";
-      renderHoldings(results);
-    };
-    ax.send();
+    try{
+      var holdings=JSON.parse(xhr.responseText);
+      if(holdings.length===0){
+        document.getElementById("holding-count").textContent="0";
+        document.getElementById("total-value").textContent="--";
+        document.getElementById("total-pnl").textContent="--";
+        document.getElementById("holdings-grid").innerHTML='<div class="empty-state">\u6682\u65e0\u6301\u4ed3\uff0c\u70b9\u51fb\u4e0a\u65b9\u6309\u94ae\u6dfb\u52a0</div>';
+        if(btn){btn.disabled=false;btn.textContent="\u5237\u65b0\u5206\u6790";}
+        return;
+      }
+      var ax=new XMLHttpRequest();
+      ax.open("GET","/api/holdings/analyze",true);
+      ax.timeout=30000;
+      ax.onload=function(){
+        try{
+          var data=JSON.parse(ax.responseText);
+          var results=data.holdings||[];
+          document.getElementById("holding-count").textContent=results.length;
+          document.getElementById("total-value").textContent=(data.total_value||0).toLocaleString("zh-CN",{style:"currency",currency:"CNY"});
+          var pnl=data.total_pnl||0;
+          var pnlEl=document.getElementById("total-pnl");
+          pnlEl.textContent=(pnl>=0?"+":"")+pnl.toFixed(0)+"\u5143";
+          pnlEl.style.color=pnl>=0?"var(--green)":"var(--red)";
+          renderHoldings(results);
+        }catch(e){alert("\u89e3\u6790\u5931\u8d25")}
+        if(btn){btn.disabled=false;btn.textContent="\u5237\u65b0\u5206\u6790";}
+      };
+      ax.onerror=function(){if(btn){btn.disabled=false;btn.textContent="\u5237\u65b0\u5206\u6790";}alert("\u5206\u6790\u8d85\u65f6")};
+      ax.send();
+    }catch(e){if(btn){btn.disabled=false;btn.textContent="\u5237\u65b0\u5206\u6790";}}
   };
+  xhr.onerror=function(){if(btn){btn.disabled=false;btn.textContent="\u5237\u65b0\u5206\u6790";}};
   xhr.send();
+}
 }
 
 function renderHoldings(results){
@@ -405,8 +430,7 @@ var pollInterval=isMobile?60000:30000;
 setInterval(checkMarket,pollInterval);
 // Stagger initial API calls to avoid overwhelming mobile
 setTimeout(function(){checkMarket()},100);
-setTimeout(function(){refreshHoldings()},300);
-setTimeout(function(){refreshAlerts()},600);
+// Holdings & alerts load on demand (click refresh)
 </script>
 </body>
 </html>
