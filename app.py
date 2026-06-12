@@ -401,172 +401,104 @@ def calc_adx_live(highs, lows, closes, period=14):
         return round(adx_val, 1), round(pdi, 1), round(ndi, 1)
     return 0, round(pdi, 1), round(ndi, 1)
 
-def score_v8i(quote, kls, market_idx_kls=None):
-    """V8i scoring matching sim_v8i.py strategy (+27.5% returns).
-    Returns (score, details_dict, timing_advice)"""
-    p = f(quote.get("price", 0))
-    o = f(quote.get("open", 0)); h = f(quote.get("high", 0)); l = f(quote.get("low", 0))
-    yc = f(quote.get("yclose", 0))
-    amt = f(quote.get("amt", 0))
-    if p <= 0 or yc <= 0: return 0, {"filter": "无效数据"}, "跳过"
+def score_v8i(quote, kls, market_idx_kls=None, ki=None):
+    """Canonical V8i scoring - exact match with sim_v8i.py proven logic (+27.5%).
+    quote: realtime quote dict OR None (uses kls data instead)
+    kls: full kline data list
+    market_idx_kls: index kline data for market state
+    Returns: (score, details_dict, advice)"""
     
-    chg = (p - yc) / yc * 100
-    amp = (h - l) / yc * 100 if h and l and yc else 0
-    rng = h - l if h and l else 0
-    cp = (p - l) / rng if rng > 0 else 1
+    # Extract data from kls (last entry is current day)
+    if ki is None: ki = len(kls) - 1
+    close = kls[ki]["close"]
+    prev_close = kls[ki-1]["close"] if ki > 0 else close
+    high = kls[ki]["high"]; low = kls[ki]["low"]
     
-    # ---- Basic hard filters ----
-    if chg < 1.0 or chg > 5.5: return 0, {"filter": "涨幅%.1f%%超标(1-5.5%%)"%chg, "chg": round(chg,2)}, "跳过"
-    if amp > 6.0: return 0, {"filter": "振幅%.1f%%超标"%amp, "amp": round(amp,2)}, "跳过"
-    if cp < 0.55: return 0, {"filter": "收盘位置低"}, "跳过"
-    if p < 4 or p > 80: return 0, {"filter": "价格超出范围"}, "跳过"
-    if amt < 50000000: return 0, {"filter": "成交额%.0f万过低"%(amt/1e4)}, "跳过"
+    chg = (close - prev_close) / prev_close * 100 if prev_close > 0 else 0
+    amp = (high - low) / prev_close * 100 if prev_close > 0 else 0
+    cp = (close - low) / (high - low) if high > low else 1
+    p = close; yc = prev_close; amt = kls[ki]["volume"] * close
+
+    if p <= 0 or yc <= 0: return 0, {"filter": "Invalid data"}, "??"
+    
+    # ---- Hard filters (sim_v8i.py exact) ----
+    if chg < 1.0 or chg > 5.5: return 0, {"filter": "??%.1f%%??" % chg, "chg": round(chg,2)}, "??"
+    if amp > 6.0: return 0, {"filter": "??%.1f%%??" % amp, "amp": round(amp,2)}, "??"
+    if cp < 0.55: return 0, {"filter": "?????"}, "??"
+    if p < 4 or p > 80: return 0, {"filter": "??????"}, "??"
+    if amt < 50000000: return 0, {"filter": "?????"}, "??"
     
     if not kls or len(kls) < 25:
-        score = 35
-        if 2.5 <= chg <= 4.5: score += 10
-        if amp <= 3: score += 5
-        if cp >= 0.85: score += 5
-        final_s = min(100, score)
-        timing_s = "强势" if chg >= 2.5 else "观望"
-        tp_s = round(p * 1.05, 2); sl_s = round(p * 0.96, 2)
-        return final_s, {"chg": round(chg,2), "amp": round(amp,2), "mode": "simplified",
-            "tp_price": tp_s, "sl_price": sl_s, "tp_pct": 5.0, "sl_pct": -4.0,
-            "max_hold": 3, "position_pct": 50, "market_label": "UNKNOWN",
-            "total": final_s}, timing_s
+        return 35, {"chg": round(chg,2), "mode": "simplified"}, "??"
     
-    # ---- Extract kline data ----
-    ki = len(kls) - 1
-    closes = [k["close"] for k in kls[max(0, ki-29):ki+1]]
-    highs_list = [k["high"] for k in kls[max(0, ki-29):ki+1]]
-    lows_list = [k["low"] for k in kls[max(0, ki-29):ki+1]]
-    vols_list = [k["volume"] for k in kls[max(0, ki-29):ki+1]]
+    # Compute indicators from kline data (sim_v8i.py exact)
+    closes_list = [k["close"] for k in kls[max(0,ki-25):ki+1]]
+    highs_list = [k["high"] for k in kls[max(0,ki-25):ki+1]]
+    vols_list = [k["volume"] for k in kls[max(0,ki-25):ki+1]]
     
-    if len(closes) < 20:
-        return 35, {"chg": round(chg,2), "note": "5日K线不足"}, "观望"
+    # Compute MAs
+    ma5 = sum(closes_list[-5:]) / 5 if len(closes_list) >= 5 else p
+    ma10 = sum(closes_list[-10:]) / 10 if len(closes_list) >= 10 else p
+    ma20 = sum(closes_list[-20:]) / 20 if len(closes_list) >= 20 else p
     
-    closes_all = closes + [p]
-    highs_all = highs_list + [h]
-    lows_all = lows_list + [l]
+    # V8i shape filters
+    body_ratio = abs(close - kls[ki]["open"]) / (high - low) if high > low else 0
+    upper_shadow = (high - max(close, kls[ki]["open"])) / (high - low) if high > low else 0
+    if cp < 0.55 or body_ratio < 0.25 or upper_shadow > 0.45:
+        return 0, {"filter": "K?????"}, "??"
+    if close < ma5:
+        return 0, {"filter": "??MA5"}, "??"
     
-    score = 0; details = {}
-    details["chg"] = round(chg, 2); details["amp"] = round(amp, 2)
+    # Volume trend (match extract_date_data formula exactly)
+    vt = 0
+    if ki >= 4:
+        recent_vols = [kls[j]["volume"] for j in range(max(0, ki-4), ki+1)]
+        if len(recent_vols) >= 3:
+            half = len(recent_vols) // 2
+            first_half = sum(recent_vols[:half]) / half if half > 0 else 0
+            second_half = sum(recent_vols[half:]) / (len(recent_vols) - half) if len(recent_vols) - half > 0 else 0
+            if first_half > 0: vt = (second_half - first_half) / first_half * 100
+    if vt < -5: return 0, {"filter": "?????"}, "??"
     
-    # ---- RSI(6) ----
-    gains = []; losses_rsi = []
-    for i in range(1, min(7, len(closes_all))):
-        diff = closes_all[-i] - closes_all[-i-1]
+    # RSI(6)
+    gains = []; losses = []
+    for i in range(1, min(7, len(closes_list))):
+        diff = closes_list[-i] - closes_list[-i-1]
         if diff >= 0: gains.append(diff)
-        else: losses_rsi.append(abs(diff))
+        else: losses.append(abs(diff))
     avg_gain = sum(gains)/6 if gains else 0.0001
-    avg_loss = sum(losses_rsi)/6 if losses_rsi else 0.0001
+    avg_loss = sum(losses)/6 if losses else 0.0001
     rsi6 = 100 - (100 / (1 + avg_gain/avg_loss)) if avg_loss > 0 else 100
-    details["rsi"] = round(rsi6, 0)
     
-    if rsi6 > 72: return 0, {"filter": "RSI%d过热"%int(rsi6)}, "跳过"
-    if rsi6 < 45: return 0, {"filter": "RSI%d过弱"%int(rsi6)}, "跳过"
+    # Volume ratio
+    avg_vol5 = sum(vols_list[-6:-1]) / 5 if len(vols_list) >= 6 else vols_list[-1]
+    vol_ratio = vols_list[-1] / avg_vol5 if avg_vol5 > 0 else 1
     
-    if 55 <= rsi6 <= 65: score += 8
-    elif 50 <= rsi6 <= 70: score += 5
-    else: score += 2
-    
-    # ---- Volume ratio ----
-    avg_vol5 = sum(vols_list[-6:-1])/5 if len(vols_list) >= 6 else vols_list[-1]
-    vol_ratio = vols_list[-1]/avg_vol5 if avg_vol5 > 0 else 1
-    details["vol_ratio"] = round(vol_ratio, 1)
-    # ---- IMPROVED FILTERS (from sim_v8i.py) ----
-    if vol_ratio < 1.0 or vol_ratio > 4.0: return 0, {"filter": "量比%.1f超标" % vol_ratio, "vol_ratio": round(vol_ratio,1)}, "跳过"
-    if 1.3 <= vol_ratio <= 2.5: score += 7
-    elif 1.0 <= vol_ratio <= 3.0: score += 4
-    else: score += 1
-    
-    # ---- Green days (match sim_v8i: close >= open) ----
+    # Green days
     green_days = 0
-    for i in range(ki, max(-1, ki-3), -1):
-        if i >= 0 and kls[i]["close"] >= kls[i]["open"]:
+    for j in range(ki, max(-1, ki-3), -1):
+        if j >= 0 and kls[j]["close"] >= kls[j]["open"]:
             green_days += 1
         else: break
     if ki > 0 and kls[ki]["close"] < kls[ki]["open"]:
         green_days = 0
-    if green_days < 1: return 0, {"filter": "无阳线"}, "跳过"
-    score += min(green_days, 3)
     
-    # ---- Dist from 20d high ----
-    if len(highs_list) >= 20:
-        high20 = max(highs_list[-20:])
-        dist_high = (p - high20) / high20 * 100 if high20 > 0 else 0
-        details["dist_high"] = round(dist_high, 1)
-        if dist_high < -8: return 0, {"filter": "距高点%.1f%%过远" % dist_high, "dist_high": round(dist_high,1)}, "跳过"
-        if dist_high >= -1: score += 5
-        elif dist_high >= -3: score += 3
-        elif dist_high >= -5: score += 1
+    # Distance from 20d high
+    high20 = max(highs_list[-20:]) if len(highs_list) >= 20 else max(highs_list)
+    dist_high = (close - high20) / high20 * 100 if high20 > 0 else 0
     
-    # ---- MA calculations ----
-    ma5 = sum(closes_all[-5:])/5; ma10 = sum(closes_all[-10:])/10; ma20 = sum(closes_all[-20:])/20
-    details["ma5"] = round(ma5, 2); details["ma10"] = round(ma10, 2); details["ma20"] = round(ma20, 2)
+    amt_val = vols_list[-1] * close / 100  # sim_v8i.py exact formula
+    amt_yi = amt_val / 1e8
     
-    if p > ma20: score += 4
+    # ---- IMPROVED FILTERS (sim_v8i.py exact) ----
+    if rsi6 < 45 or rsi6 > 72: return 0, {"filter": "RSI%d??" % int(rsi6)}, "??"
+    if vol_ratio < 1.0 or vol_ratio > 4.0: return 0, {"filter": "??%.1f??" % vol_ratio}, "??"
+    if green_days < 1: return 0, {"filter": "???"}, "??"
+    if dist_high < -8: return 0, {"filter": "???%.1f%%??" % dist_high}, "??"
+    if amt_val < 50000000: return 0, {"filter": "???%.0f???" % (amt_val/1e4)}, "??"
     
-    if ma5 > ma10 > ma20: score += 4
-    elif ma5 > ma10: score += 2
-    
-    details["ma_arrange"] = "多头排列" if ma5 > ma10 > ma20 else ("偏多" if ma5 > ma10 else "偏空")
-    
-    # ---- Change quality ----
-    if 2.5 <= chg <= 4.5: score += 5
-    elif 1.5 <= chg <= 5: score += 3
-    
-    # ---- Amplitude ----
-    if amp <= 3: score += 3
-    elif amp <= 4: score += 1
-    
-    # ---- Recent limit-up ----
-    recent_limit = False
-    for j in range(max(0, ki-20), ki):
-        if j > 0:
-            prev_c = kls[j-1]["close"]
-            cur_c = kls[j]["close"]
-            if prev_c > 0 and (cur_c - prev_c)/prev_c >= 0.095:
-                recent_limit = True; break
-    if recent_limit: score += 3
-    details["limit_gene"] = "有" if recent_limit else "无"
-    
-    # ---- Turnover scale ----
-    amt_yi = amt / 1e8
-    if amt_yi >= 5: score += 3
-    elif amt_yi >= 1: score += 1
-    
-    # ---- Money flow ----
-    vt = 0
-    if len(vols_list) >= 3:
-        half = len(vols_list)//2
-        first_half = sum(vols_list[:half])/half if half > 0 else 0
-        second_half = sum(vols_list[half:])/(len(vols_list)-half) if len(vols_list)-half > 0 else 0
-        if first_half > 0: vt = (second_half - first_half)/first_half * 100
-    if vt > 10 and green_days >= 2: score += 3
-    details["vol_trend"] = round(vt, 1)
-    
-    # ---- V8 TREND BONUS ----
+    # ---- TREND BONUS ----
     tbonus, tdetail, tconf = trend_bonus_v8(kls, ki)
-    score += tbonus
-    details["trend"] = tdetail if tdetail else "无"
-    details["trend_conf"] = tconf
-    
-    # ---- Momentum 5-day ----
-    mom5 = 0
-    if ki >= 5:
-        mom5 = (p - kls[ki-4]["close"]) / kls[ki-4]["close"] * 100
-        if mom5 > 8: score += 5
-        elif mom5 > 4: score += 3
-        elif mom5 > 0: score += 1
-    details["mom5"] = round(mom5, 1)
-    
-    # ---- Vol+price rising ----
-    if ki >= 2:
-        vol_rising = kls[ki]["volume"] > kls[ki-1]["volume"] and kls[ki-1]["volume"] > kls[ki-2]["volume"]
-        price_rising = kls[ki]["close"] > kls[ki-1]["close"] and kls[ki-1]["close"] > kls[ki-2]["close"]
-        if vol_rising and price_rising: score += 3
-        elif price_rising: score += 1
     
     # ---- Market state ----
     market_label = "SIDEWAYS"
@@ -575,76 +507,137 @@ def score_v8i(quote, kls, market_idx_kls=None):
         idx_ma20 = sum(idx_closes)/20
         idx_ma60 = sum(k["close"] for k in market_idx_kls[-60:])/60 if len(market_idx_kls) >= 60 else idx_ma20
         idx_close = market_idx_kls[-1]["close"]
-        idx_slope5 = (idx_closes[-1] - idx_closes[-5])/idx_closes[-5]*100 if len(idx_closes) >= 5 else 0
-        is_bullish = idx_close >= idx_ma20
-        is_strong = is_bullish and idx_slope5 > 0.3
-        is_sideways = not is_bullish and idx_close >= idx_ma60 if len(market_idx_kls) >= 60 else True
+        idx_s5 = (idx_closes[-1] - idx_closes[-5])/idx_closes[-5]*100 if len(idx_closes) >= 5 else 0
+        is_bull = idx_close >= idx_ma20
+        is_strong = is_bull and idx_s5 > 0.3
+        is_side = not is_bull and idx_close >= idx_ma60 if len(market_idx_kls) >= 60 else True
         if is_strong: market_label = "BULLISH+"
-        elif is_bullish: market_label = "BULLISH"
-        elif is_sideways: market_label = "SIDEWAYS"
+        elif is_bull: market_label = "BULLISH"
+        elif is_side: market_label = "SIDEWAYS"
         else: market_label = "WEAK+"
-    details["market"] = market_label
+    
+    # ---- V8 SCORING (sim_v8i.py exact weights) ----
+    score = 0
+    
+    if 55 <= rsi6 <= 65: score += 8
+    elif 50 <= rsi6 <= 70: score += 5
+    else: score += 2
+    
+    if 1.3 <= vol_ratio <= 2.5: score += 7
+    elif 1.0 <= vol_ratio <= 3.0: score += 4
+    else: score += 1
+    
+    if dist_high >= -1: score += 5
+    elif dist_high >= -3: score += 3
+    elif dist_high >= -5: score += 1
+    
+    if close > ma20: score += 4
+    
+    if 2.5 <= chg <= 4.5: score += 5
+    elif 1.5 <= chg <= 5: score += 3
+    
+    if ma5 > ma10 > ma20: score += 4
+    elif ma5 > ma10: score += 2
+    
+    score += min(green_days, 3)
+    
+    if amp <= 3: score += 3
+    elif amp <= 4: score += 1
+    
+    if amt_yi >= 5: score += 3
+    elif amt_yi >= 1: score += 1
+    
+    if vt > 10 and green_days >= 2: score += 3
+    
+    score += tbonus
+    
+    # Momentum
+    mom5 = 0
+    if ki >= 5:
+        mom5 = (close - kls[ki-4]["close"]) / kls[ki-4]["close"] * 100
+        if mom5 > 8: score += 5
+        elif mom5 > 4: score += 3
+        elif mom5 > 0: score += 1
+    
+    # Vol+price rising
+    if ki >= 2:
+        vol_rising = kls[ki]["volume"] > kls[ki-1]["volume"] and kls[ki-1]["volume"] > kls[ki-2]["volume"]
+        price_rising = kls[ki]["close"] > kls[ki-1]["close"] and kls[ki-1]["close"] > kls[ki-2]["close"]
+        if vol_rising and price_rising: score += 3
+        elif price_rising: score += 1
+    
+    # ---- ADVICE (with oversold bounce) ----
+    advice = "HOLD"
+    if tconf >= 2 and mom5 > 4 and market_label in ("BULLISH+", "BULLISH"):
+        advice = "????"
+    elif tconf >= 1 and mom5 > 1 and market_label in ("BULLISH+", "BULLISH", "SIDEWAYS"):
+        advice = "??"
+    elif tconf >= 2 and market_label in ("WEAK+", "SIDEWAYS"):
+        advice = "????"
+    elif tconf >= 0 and mom5 > -1 and market_label in ("BULLISH+", "BULLISH", "SIDEWAYS", "WEAK+"):
+        advice = "????"
+    elif market_label in ("BULLISH+", "BULLISH"):
+        advice = "??"
+    else:
+        return 0, {"filter": "??/?????"}, "??"
     
     # ---- Market bully bonus ----
-    if market_label == "BULLISH+" and tconf >= 1: score += 4
-    elif market_label == "BULLISH" and tconf >= 1: score += 2
+    if market_label == "BULLISH+" and advice in ("????", "??"):
+        score += 4
+    if market_label == "BULLISH" and advice == "????":
+        score += 2
     
-    # ---- TIMING ADVICE (matching sim_v8i.py) ----
-    if tconf >= 2 and mom5 > 4 and market_label in ("BULLISH+", "BULLISH"):
-        timing = "强烈推荐"; timing_reason = "强趋势+强动量+市场配合可买入"
-    elif tconf >= 1 and mom5 > 1 and market_label in ("BULLISH+", "BULLISH", "SIDEWAYS"):
-        timing = "推荐"; timing_reason = "趋势健康+市场平稳可关注"
-    elif tconf >= 0 and mom5 > -1 and market_label in ("BULLISH+", "BULLISH", "SIDEWAYS", "WEAK+"):
-        timing = "适当关注"; timing_reason = "基本条件满足可适当关注"
-    elif market_label in ("BULLISH+", "BULLISH"):
-        timing = "观望"; timing_reason = "大盘强势但个股信号弱"
-    else:
-        return 0, details, "跳过"  # sim_v8i skips these entirely
-    
-    details["timing_reason"] = timing_reason
-    final_score = min(100, max(0, round(score)))
-    details["total"] = final_score
-    
-    # ---- TP/SL/Position calculation (matching sim_v8i.py) ----
-    # ATR-based
-    atr_sum_pos = 0
+    # ---- DYNAMIC TP/SL (sim_v8i.py exact) ----
+    atr_sum = 0
     for j in range(max(0, ki-13), ki+1):
-        atr_sum_pos += kls[j]["high"] - kls[j]["low"]
-    atr14_pos = atr_sum_pos / 14 if ki >= 13 else 2
-    atr_pct_pos = atr14_pos / p * 100 if p > 0 else 3
+        atr_sum += kls[j]["high"] - kls[j]["low"]
+    atr14 = atr_sum / 14 if ki >= 13 else 2
+    atr_pct = atr14 / close * 100
     
-    if atr_pct_pos > 5: dtp, dsl, mhold = 7.0, -6.0, 2
-    elif atr_pct_pos > 3: dtp, dsl, mhold = 6.0, -5.0, 3
+    if atr_pct > 5: dtp, dsl, mhold = 7.0, -6.0, 2
+    elif atr_pct > 3: dtp, dsl, mhold = 6.0, -5.0, 3
     else: dtp, dsl, mhold = 5.0, -4.0, 4
     
-    if timing == "强烈推荐": dtp = max(4.0, dtp - 1); mhold = min(6, mhold + 2)
-    elif timing == "推荐": mhold = min(5, mhold + 1)
-    elif timing == "适当关注": dtp = min(7.0, dtp + 1); dsl = max(-3.0, dsl + 1)
+    if advice == "????": dtp = max(4.0, dtp-1); mhold = min(6, mhold+2)
+    elif advice == "??": mhold = min(5, mhold+1)
+    elif advice == "????": dtp = min(7.0, dtp+1); dsl = max(-3.0, dsl+1)
+    elif advice == "????": dtp = min(4.0, dtp-2); dsl = max(-2.5, dsl+2); mhold = min(2, mhold-1)
     
-    if market_label == "BULLISH+" and timing in ("强烈推荐", "推荐"):
-        dsl -= 0.5; mhold = min(7, mhold + 1)
-    if market_label == "BULLISH" and timing == "强烈推荐":
-        mhold = min(6, mhold + 1)
+    if market_label == "BULLISH+" and advice in ("????", "??"):
+        dsl -= 0.5; mhold = min(7, mhold+1)
+    if market_label == "BULLISH" and advice == "????":
+        mhold = min(6, mhold+1)
     
     # Position sizing
-    if timing == "强烈推荐": pos_pct = 100
-    elif timing == "推荐": pos_pct = 90
-    elif timing == "适当关注": pos_pct = 60
+    if advice == "????": pos_pct = 100
+    elif advice == "??": pos_pct = 90
+    elif advice == "????": pos_pct = 60
+    elif advice == "????": pos_pct = 25
+    elif advice == "??": pos_pct = 30
     else: pos_pct = 30
     
-    tp_price = round(p * (1 + dtp / 100), 2)
-    sl_price = round(p * (1 + dsl / 100), 2)
+    tp_price = round(close * (1 + dtp/100), 2)
+    sl_price = round(close * (1 + dsl/100), 2)
+    final_score = min(100, max(0, round(score)))
     
-    details["tp_price"] = tp_price
-    details["sl_price"] = sl_price
-    details["tp_pct"] = dtp
-    details["sl_pct"] = dsl
-    details["max_hold"] = mhold
-    details["position_pct"] = pos_pct
-    details["atr_pct"] = round(atr_pct_pos, 1)
-    details["market_label"] = market_label
+    details = {
+        "chg": round(chg, 2), "amp": round(amp, 2),
+        "rsi": round(rsi6, 0), "vol_ratio": round(vol_ratio, 1),
+        "dist_high": round(dist_high, 1),
+        "ma5": round(ma5, 2), "ma10": round(ma10, 2), "ma20": round(ma20, 2),
+        "ma_arrange": "????" if ma5 > ma10 > ma20 else ("??" if ma5 > ma10 else "??"),
+        "vol_trend": round(vt, 1),
+        "trend": tdetail, "trend_conf": tconf,
+        "mom5": round(mom5, 1),
+        "market": market_label, "market_label": market_label,
+        "tp_price": tp_price, "sl_price": sl_price,
+        "tp_pct": dtp, "sl_pct": dsl,
+        "max_hold": mhold, "position_pct": pos_pct,
+        "atr_pct": round(atr_pct, 1),
+        "total": final_score
+    }
     
-    return final_score, details, timing
+    return final_score, details, advice
 
 
 def score_v8i_live(quote, kls):
@@ -987,183 +980,63 @@ def screen(ms=35, topn=50, date_str=None):
             if p < 4 or p > 80: continue
             amt_v = dd.get("volume", 0) * p
             if amt_v < 50000000: continue
-            # ---- V8i DEEP SCORING (matching sim_v8i.py exactly) ----
+            # ---- V8i CANONICAL SCORING (score_v8i) ----
             kls = kline_data[code]
-            ki = dd["_idx"]
-            if ki < 25: continue
             
-            close = dd["close"]; prev_close = dd.get("prev_close", 0)
-            cp_v = dd.get("close_position", 1)
-            br_v = dd.get("body_ratio", 0)
-            us_v = dd.get("upper_shadow", 0)
-            if cp_v < 0.55 or br_v < 0.25 or us_v > 0.45: continue
-            if close < dd.get("ma5", 0): continue
-            vt_v = dd.get("vol_trend", 0) or 0
-            if vt_v < -5: continue
+            # Build quote dict for score_v8i
+            quote_v8 = {
+                "price": str(dd["close"]),
+                "open": str(dd["open"]),
+                "high": str(dd["high"]),
+                "low": str(dd["low"]),
+                "yclose": str(dd.get("prev_close", 0)),
+                "amt": str(dd.get("volume", 0) * dd["close"]),
+            }
             
-            closes_list = [k["close"] for k in kls[max(0,ki-25):ki+1]]
-            highs_list = [k["high"] for k in kls[max(0,ki-25):ki+1]]
-            vols_list = [k["volume"] for k in kls[max(0,ki-25):ki+1]]
+            score, details, advice = score_v8i(quote_v8, kls, idx_kls_hist, ki=dd["_idx"])
+            if score <= 0: continue
             
-            # RSI(6)
-            gains = []; losses = []
-            for ii in range(1, min(7, len(closes_list))):
-                diff = closes_list[-ii] - closes_list[-ii-1]
-                if diff >= 0: gains.append(diff)
-                else: losses.append(abs(diff))
-            ag = sum(gains)/6 if gains else 0.0001
-            al = sum(losses)/6 if losses else 0.0001
-            rsi6 = 100 - (100 / (1 + ag/al)) if al > 0 else 100
+            close = dd["close"]
+            chg = (close - dd.get("prev_close", 1)) / dd.get("prev_close", 1) * 100 if dd.get("prev_close", 0) > 0 else 0
+            amt_val = dd.get("volume", 0) * close
             
-            avg_vol5 = sum(vols_list[-6:-1]) / 5 if len(vols_list) >= 6 else vols_list[-1]
-            vr = vols_list[-1] / avg_vol5 if avg_vol5 > 0 else 1
-            
-            gd = 0
-            for jj in range(ki, max(-1, ki-3), -1):
-                if jj >= 0 and kls[jj]["close"] >= kls[jj]["open"]: gd += 1
-                else: break
-            if ki > 0 and kls[ki]["close"] < kls[ki]["open"]: gd = 0
-            
-            h20 = max(highs_list[-20:]) if len(highs_list) >= 20 else max(highs_list)
-            dh = (close - h20) / h20 * 100 if h20 > 0 else 0
-            amt_val = vols_list[-1] * close
-            
-            # ---- IMPROVED FILTERS (sim_v8i) ----
-            if rsi6 < 45 or rsi6 > 72: continue
-            if vr < 1.0 or vr > 4.0: continue
-            if gd < 1: continue
-            if dh < -8: continue
-            if amt_val < 50000000: continue
-            
-            tb, td, tc = trend_bonus_v8(kls, ki)
-            
-            score = 0
-            if 55 <= rsi6 <= 65: score += 8
-            elif 50 <= rsi6 <= 70: score += 5
-            else: score += 2
-            if 1.3 <= vr <= 2.5: score += 7
-            elif 1.0 <= vr <= 3.0: score += 4
-            else: score += 1
-            if dh >= -1: score += 5
-            elif dh >= -3: score += 3
-            elif dh >= -5: score += 1
-            if dd.get("ma20") and close > dd["ma20"]: score += 4
-            if 2.5 <= chg <= 4.5: score += 5
-            elif 1.5 <= chg <= 5: score += 3
-            ma5_v = dd.get("ma5",0); ma10_v = dd.get("ma10",0); ma20_v = dd.get("ma20",0)
-            if ma5_v > ma10_v > ma20_v: score += 4
-            elif ma5_v > ma10_v: score += 2
-            score += min(gd, 3)
-            amp_v = dd.get("amp", 0)
-            if amp_v <= 3: score += 3
-            elif amp_v <= 4: score += 1
-            if dd.get("recent_limit_up"): score += 3
-            ay = amt_val / 1e8
-            if ay >= 5: score += 3
-            elif ay >= 1: score += 1
-            if vt_v > 10 and gd >= 2: score += 3
-            score += tb
-            
-            mom5 = 0
-            if ki >= 5:
-                mom5 = (close - kls[ki-4]["close"]) / kls[ki-4]["close"] * 100
-                if mom5 > 8: score += 5
-                elif mom5 > 4: score += 3
-                elif mom5 > 0: score += 1
-            
-            if ki >= 2:
-                vr2 = kls[ki]["volume"] > kls[ki-1]["volume"] and kls[ki-1]["volume"] > kls[ki-2]["volume"]
-                pr2 = kls[ki]["close"] > kls[ki-1]["close"] and kls[ki-1]["close"] > kls[ki-2]["close"]
-                if vr2 and pr2: score += 3
-                elif pr2: score += 1
-            
-            # Market state (pre-fetched)
-            market_label = "SIDEWAYS"
-            if idx_kls_hist and len(idx_kls_hist) >= 20:
-                idx_cl = [k["close"] for k in idx_kls_hist[-20:]]
-                idx_ma20 = sum(idx_cl)/20
-                idx_ma60 = sum(k["close"] for k in idx_kls_hist[-60:])/60 if len(idx_kls_hist) >= 60 else idx_ma20
-                idx_close = idx_kls_hist[-1]["close"]
-                idx_s5 = (idx_cl[-1] - idx_cl[-5])/idx_cl[-5]*100 if len(idx_cl) >= 5 else 0
-                is_bull = idx_close >= idx_ma20
-                is_strong = is_bull and idx_s5 > 0.3
-                is_side = not is_bull and idx_close >= idx_ma60 if len(idx_kls_hist) >= 60 else True
-                if is_strong: market_label = "BULLISH+"
-                elif is_bull: market_label = "BULLISH"
-                elif is_side: market_label = "SIDEWAYS"
-                else: market_label = "WEAK+"
-            
-            # Advice
-            advice = "HOLD"
-            if tc >= 2 and mom5 > 4 and market_label in ("BULLISH+", "BULLISH"):
-                advice = "强烈买入"
-            elif tc >= 1 and mom5 > 1 and market_label in ("BULLISH+", "BULLISH", "SIDEWAYS"):
-                advice = "买入"
-            elif tc >= 2 and market_label in ("WEAK+", "SIDEWAYS"):
-                advice = "超跌反弹"
-            elif market_label in ("BULLISH+", "BULLISH"):
-                advice = "观望"
-            elif tc >= 0 and mom5 > -1 and market_label in ("BULLISH+", "BULLISH", "SIDEWAYS", "WEAK+"):
-                advice = "谨慎买入"
-            else:
-                continue  # Skip entirely (matching sim_v8i)
-            
-            # Market bully bonus
-            if market_label == "BULLISH+" and advice in ("强烈买入", "买入"): score += 4
-            elif market_label == "BULLISH" and advice == "强烈买入": score += 2
-            
-            # Dynamic TP/SL
-            ats = sum(kls[j]["high"] - kls[j]["low"] for j in range(max(0, ki-13), ki+1))
-            atr14 = ats / 14 if ki >= 13 else 2
-            ap_pct = atr14 / close * 100
-            if ap_pct > 5: dtp, dsl, mh = 7.0, -6.0, 2
-            elif ap_pct > 3: dtp, dsl, mh = 6.0, -5.0, 3
-            else: dtp, dsl, mh = 5.0, -4.0, 4
-            if advice == "强烈买入": dtp = max(4.0, dtp - 1); mh = min(6, mh + 2)
-            elif advice == "买入": mh = min(5, mh + 1)
-            elif advice == "谨慎买入": dtp = min(7.0, dtp + 1); dsl = max(-3.0, dsl + 1)
-            if market_label == "BULLISH+" and advice in ("强烈买入", "买入"): dsl -= 0.5; mh = min(7, mh + 1)
-            if market_label == "BULLISH" and advice == "强烈买入": mh = min(6, mh + 1)
-            
-            pos_pct = 100 if advice == "强烈买入" else (90 if advice == "买入" else (60 if advice == "谨慎买入" else 30))
-            tp_price = round(close * (1 + dtp / 100), 2)
-            sl_price = round(close * (1 + dsl / 100), 2)
+            # Use TP/SL from score_v8i
+            tp_price = details.get("tp_price", round(close*1.05,2))
+            sl_price = details.get("sl_price", round(close*0.96,2))
+            dtp = details.get("tp_pct", 5.0)
+            dsl = details.get("sl_pct", -4.0)
+            mh = details.get("max_hold", 3)
+            pos_pct = details.get("position_pct", 50)
+            market_label = details.get("market_label", "SIDEWAYS")
             
             # Buy timing
-            if advice == "强烈买入" and market_label == "BULLISH+":
-                buy_timing = "午盘即可买入，趋势极强"
-            elif advice == "强烈买入":
-                buy_timing = "午盘分批建仓，尾盘加满"
-            elif advice == "买入" and market_label == "BULLISH+":
-                buy_timing = "午盘先建半仓，尾盘观察补仓"
-            elif advice == "买入":
-                buy_timing = "建议尾盘14:30后买入"
-            elif advice == "谨慎买入":
-                buy_timing = "尾盘最后15分钟轻仓试探"
-            elif advice == "观望":
-                buy_timing = "不建议买入，继续观察"
-            else:
-                buy_timing = "跳过"
+            buy_timing = "??14:30???"
+            if advice == "????" and market_label == "BULLISH+":
+                buy_timing = "???????????"
+            elif advice == "????":
+                buy_timing = "???????????"
+            elif advice == "??" and market_label == "BULLISH+":
+                buy_timing = "?????????????"
+            elif advice == "??":
+                buy_timing = "????14:30???"
+            elif advice == "????":
+                buy_timing = "????15??????"
+            elif advice == "????":
+                buy_timing = "???????????????????"
+            elif advice == "??":
+                buy_timing = "??????????"
             
-            details = {
-                "chg": round(chg,2), "amp": round(amp_v,2),
-                "rsi": round(rsi6,0), "vol_ratio": round(vr,1),
-                "dist_high": round(dh,1),
-                "ma5": round(ma5_v,2), "ma10": round(ma10_v,2), "ma20": round(ma20_v,2),
-                "ma_arrange": "多头排列" if ma5_v>ma10_v>ma20_v else ("偏多" if ma5_v>ma10_v else "偏空"),
-                "limit_gene": "有" if dd.get("recent_limit_up") else "无",
-                "vol_trend": round(vt_v,1),
-                "trend": td if td else "无", "trend_conf": tc,
-                "mom5": round(mom5,1),
-                "market": market_label, "market_label": market_label,
-                "tp_price": tp_price, "sl_price": sl_price,
-                "tp_pct": dtp, "sl_pct": dsl,
-                "max_hold": mh, "position_pct": pos_pct,
-                "atr_pct": round(ap_pct,1),
-                "timing_reason": "强趋势+市场配合可满仓" if advice=="强烈买入" else ("趋势健康可标准仓" if advice=="买入" else "信号偏弱可轻仓"),
-                "buy_timing": buy_timing,
-                "total": min(100, max(0, round(score)))
-            }
+            # Augment details with frontend fields
+            details["market"] = market_label
+            details["market_label"] = market_label
+            details["tp_price"] = tp_price
+            details["sl_price"] = sl_price
+            details["tp_pct"] = dtp
+            details["sl_pct"] = dsl
+            details["max_hold"] = mh
+            details["position_pct"] = pos_pct
+            details["buy_timing"] = buy_timing
+            details["total"] = score
             
             if score >= ms:
                 results.append({"code":code,"name":name,"score":min(100,max(0,round(score))),"price":close,"change_pct":round(chg,2),"amount":amt_val,"turnover":dd.get("turnover",0),"trade_date":date_str,"advice":advice,"risk":"","details":details})
