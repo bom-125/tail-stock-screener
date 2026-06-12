@@ -1026,7 +1026,7 @@ def screen(ms=35, topn=50, date_str=None):
             
             h20 = max(highs_list[-20:]) if len(highs_list) >= 20 else max(highs_list)
             dh = (close - h20) / h20 * 100 if h20 > 0 else 0
-            amt_val = vols_list[-1] * close / 100
+            amt_val = vols_list[-1] * close
             
             # ---- IMPROVED FILTERS (sim_v8i) ----
             if rsi6 < 45 or rsi6 > 72: continue
@@ -1099,10 +1099,12 @@ def screen(ms=35, topn=50, date_str=None):
                 advice = "强烈买入"
             elif tc >= 1 and mom5 > 1 and market_label in ("BULLISH+", "BULLISH", "SIDEWAYS"):
                 advice = "买入"
-            elif tc >= 0 and mom5 > -1 and market_label in ("BULLISH+", "BULLISH", "SIDEWAYS", "WEAK+"):
-                advice = "谨慎买入"
+            elif tc >= 2 and market_label in ("WEAK+", "SIDEWAYS"):
+                advice = "超跌反弹"
             elif market_label in ("BULLISH+", "BULLISH"):
                 advice = "观望"
+            elif tc >= 0 and mom5 > -1 and market_label in ("BULLISH+", "BULLISH", "SIDEWAYS", "WEAK+"):
+                advice = "谨慎买入"
             else:
                 continue  # Skip entirely (matching sim_v8i)
             
