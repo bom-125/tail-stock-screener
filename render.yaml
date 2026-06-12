@@ -1,11 +1,12 @@
 ﻿services:
   - type: web
     name: tail-stock-screener
-    runtime: python
+    env: python
+    plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python app.py --serve --port $PORT
+    startCommand: python app.py --serve
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.0
+      - key: PORT
+        value: "10000"
       - key: SCAN_LIMIT
         value: "99999"
