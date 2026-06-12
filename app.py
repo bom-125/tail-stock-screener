@@ -127,7 +127,7 @@ def scheduled_scan_loop():
                     <p><small>-- ??????????</small></p>""".format(today_str, len(results), rows)
                     send_email("?????? - {}".format(today_str), body)
             
-            _time.sleep(45)  # Check every 45 seconds
+            _time.sleep(60)  # Check every 60 seconds
         except Exception as e:
             print("[Scheduler] Error: {}".format(e))
             _time.sleep(60)
@@ -1583,7 +1583,7 @@ def monitor_loop():
         try:
             if is_market_open():
                 monitor_holdings()
-                _time.sleep(60)  # Check every 60 seconds during market
+                _time.sleep(120)  # Check every 120s during market (reduced for mobile/Railway)
             else:
                 MONITOR_STATUS["running"] = False
                 _time.sleep(120)  # Check every 2 minutes outside market

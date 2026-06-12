@@ -22,11 +22,11 @@ header .status-dot{width:10px;height:10px;border-radius:50%;display:inline-block
 .tab .badge{background:var(--red);color:#fff;font-size:11px;padding:2px 7px;border-radius:10px;margin-left:6px;font-weight:700}
 .panel{display:none}
 .panel.active{display:block}
-.holdings-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
+.holdings-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}@media(max-width:768px){.holdings-grid{grid-template-columns:1fr}.container{padding:8px}.tab{padding:10px 16px;font-size:13px}header{padding:8px 12px}header h1{font-size:16px}}
 .holding-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;transition:border-color .2s}
 .holding-card:hover{border-color:var(--accent)}
 .holding-card.alert-danger{border-color:var(--red);animation:alertPulse 1.5s infinite}
-@keyframes alertPulse{0%,100%{box-shadow:0 0 0px var(--red)}50%{box-shadow:0 0 16px rgba(239,83,80,.3)}}
+@keyframes alertPulse{0%,100%{box-shadow:0 0 0px var(--red)}50%{box-shadow:0 0 16px rgba(239,83,80,.3)}}@media(max-width:768px){.holding-card.alert-danger{animation:none;border-color:var(--red);box-shadow:0 0 8px rgba(239,83,80,.2)}.status-live{animation:none}}
 .hc-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
 .hc-code{font-size:18px;font-weight:700;color:var(--accent)}
 .hc-name{font-size:13px;color:var(--muted)}
@@ -400,10 +400,13 @@ function checkMarket(){
 }
 
 document.getElementById("td").value=T.getLatestTradeDay(new Date());
-setInterval(checkMarket,30000);
-checkMarket();
-refreshHoldings();
-refreshAlerts();
+var isMobile=/Android|iPhone|iPad/i.test(navigator.userAgent);
+var pollInterval=isMobile?60000:30000;
+setInterval(checkMarket,pollInterval);
+// Stagger initial API calls to avoid overwhelming mobile
+setTimeout(function(){checkMarket()},100);
+setTimeout(function(){refreshHoldings()},300);
+setTimeout(function(){refreshAlerts()},600);
 </script>
 </body>
 </html>
