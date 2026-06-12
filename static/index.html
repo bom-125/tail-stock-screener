@@ -186,37 +186,47 @@ function startScan(){
   lstage.textContent="预计"+(isToday?"约5秒":"约1-2分钟")+" | 获取数据中...";
   ov.classList.add("show");
 
-  var elapsed=0;
-  var stages=["获取A股列表...","拉取实时行情...","逐只评分计算...","排序筛选...","即将完成..."];
-  var ptimer=setInterval(function(){
-    elapsed+=0.3;
-    var pct=Math.min(92, elapsed/(isToday?5:90)*100);
-    bar.style.width=pct+"%";
-    var si=Math.min(4, Math.floor(elapsed/(isToday?1.5:25)));
-    lstage.textContent="预计"+(isToday?"约5秒":"约1-2分钟")+" | "+stages[si];
-  },300);
+  // Real progress polling from server
+  var ppoller=setInterval(function(){
+    var px=new XMLHttpRequest();
+    px.open("GET","/api/progress",true);
+    px.timeout=2000;
+    px.onload=function(){
+      try{
+        var p=JSON.parse(px.responseText);
+        if(p.total>0){
+          var realPct=Math.min(92, Math.round(p.done/p.total*100));
+          bar.style.width=realPct+"%";
+          ltitle.textContent="?? "+realPct+"%";
+        }
+        if(p.msg){lstage.textContent=p.msg}
+      }catch(e){}
+    };
+    px.send();
+  },500);
 
   var url="/api/scan?min_score="+ms;
   if(!isToday){url+="&date="+td}
 
   var xhr=new XMLHttpRequest();
   xhr.open("GET", url, true);
-  xhr.timeout=180000;
+  xhr.timeout=300000;
   xhr.onload=function(){
-    clearInterval(ptimer);
+    clearInterval(ppoller);
     bar.style.width="100%";
+    ltitle.textContent="??!";
     setTimeout(function(){ov.classList.remove("show")},400);
     try{
       var d=JSON.parse(xhr.responseText);
-      if(d.error){status.innerHTML='<span style="color:var(--red)">错误: '+d.error+'</span>'}
-      else if(d.count===0){status.innerHTML='<span style="color:var(--orange)">无符合条件的标的</span>'}
-      else{status.innerHTML='<span style="color:var(--green)">扫描完成! '+d.count+' 只标的</span>';renderTable(d)}
-      tip.textContent="耗时 "+d.elapsed+"秒";
-    }catch(e){status.innerHTML='<span style="color:var(--red)">解析失败</span>'}
-    btn.disabled=false;btn.textContent="开始扫描";
+      if(d.error){status.innerHTML='<span style="color:var(--red)">??: '+d.error+'</span>'}
+      else if(d.count===0){status.innerHTML='<span style="color:var(--orange)">????????</span>'}
+      else{status.innerHTML='<span style="color:var(--green)">????! '+d.count+' ???</span>';renderTable(d)}
+      tip.textContent="?? "+d.elapsed+"?";
+    }catch(e){status.innerHTML='<span style="color:var(--red)">????</span>'}
+    btn.disabled=false;btn.textContent="????";
   };
-  xhr.onerror=function(){clearInterval(ptimer);ov.classList.remove("show");status.innerHTML='<span style="color:var(--red)">连接失败</span>';btn.disabled=false;btn.textContent="开始扫描"};
-  xhr.ontimeout=function(){clearInterval(ptimer);ov.classList.remove("show");status.innerHTML='<span style="color:var(--red)">请求超时</span>';btn.disabled=false;btn.textContent="开始扫描"};
+  xhr.onerror=function(){clearInterval(ppoller);ov.classList.remove("show");status.innerHTML='<span style="color:var(--red)">????</span>';btn.disabled=false;btn.textContent="????"};
+  xhr.ontimeout=function(){clearInterval(ppoller);ov.classList.remove("show");status.innerHTML='<span style="color:var(--red)">????</span>';btn.disabled=false;btn.textContent="????"};
   xhr.send();
 }
 

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import json,sys,os,time,re,threading,math
+import json,sys,os,time,re,threading,math,gzip,io
 from datetime import datetime,timedelta
 from http.server import HTTPServer,BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
@@ -19,6 +19,7 @@ def new_session():
 S=new_session()
 CACHE={}; STOCK_CACHE_FILE=os.path.join(os.path.dirname(os.path.abspath(__file__)),"stocks_cache.json")
 KLINES_CACHE_FILE=os.path.join(os.path.dirname(os.path.abspath(__file__)),"klines_cache.json")
+KLINES_DAILY_CACHE=os.path.join(os.path.dirname(os.path.abspath(__file__)),"klines_daily.json")
 PROGRESS={"total":0,"done":0,"msg":""}
 
 def f(s):
@@ -69,6 +70,75 @@ def get_stocks():
             json.dump(all_stocks,fc,ensure_ascii=False)
     except: pass
     return all_stocks
+# Pre-cache klines for most active stocks (background, runs at startup)
+_precache_done = False
+_daily_cache_loaded = False
+_daily_cache_data = {}
+
+def _load_daily_cache():
+    global _daily_cache_loaded, _daily_cache_data
+    if _daily_cache_loaded: return
+    try:
+        with open(KLINES_DAILY_CACHE, "r", encoding="utf-8") as f:
+            _daily_cache_data = json.load(f)
+        _daily_cache_loaded = True
+        print(f"[Cache] Loaded {len(_daily_cache_data)-1} cached klines from disk")
+    except:
+        _daily_cache_loaded = True
+
+def _save_daily_cache():
+    global _daily_cache_data
+    _daily_cache_data["_date"] = datetime.now().strftime("%Y-%m-%d")
+    with open(KLINES_DAILY_CACHE, "w", encoding="utf-8") as f:
+        json.dump(_daily_cache_data, f, ensure_ascii=False)
+
+def precache_all_klines():
+    global _precache_done, _daily_cache_loaded, _daily_cache_data
+    stocks = get_stocks()
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    _load_daily_cache()
+    if _daily_cache_data.get("_date") == today_str and len(_daily_cache_data) > 500:
+        _precache_done = True
+        print(f"[Precache] Reusing {len(_daily_cache_data)-1} cached stocks from today")
+        return
+    
+    # Only precache the first 800 stocks (most liquid, most likely candidates)
+    # The rest will be cached incrementally during scans
+    codes = [c for c,_ in stocks[:800]]
+    print(f"[Precache] Fetching klines for top {len(codes)} stocks (background)...")
+    t0 = time.time()
+    def worker(code):
+        sym = ("sh" if code.startswith("6") else "sz")+code
+        kls = fetch_kline_sina(sym, 60)
+        return code, kls
+    done = 0
+    with ThreadPoolExecutor(max_workers=20) as ex:
+        futs = {ex.submit(worker, c): c for c in codes}
+        for fut in as_completed(futs):
+            code, kls = fut.result()
+            if kls: _daily_cache_data[code] = kls
+            done += 1
+            if done % 200 == 0:
+                print(f"[Precache] {done}/{len(codes)} ({done*100//len(codes)}%)")
+    _save_daily_cache()
+    _precache_done = True
+    print(f"[Precache] Done! {done} stocks cached in {time.time()-t0:.1f}s")
+
+def get_cached_klines(code):
+    """Get klines from daily cache if available"""
+    global _daily_cache_loaded, _daily_cache_data
+    _load_daily_cache()
+    return _daily_cache_data.get(code, [])
+
+def _add_kline_to_cache(code, kls):
+    """Add kline data to daily cache incrementally"""
+    global _daily_cache_loaded, _daily_cache_data
+    _load_daily_cache()
+    if code and kls and isinstance(kls, list) and len(kls) > 0:
+        _daily_cache_data[code] = kls
+        return True
+    return False
+
 def get_quotes(codes):
     if not codes: return {}
     syms=[("sh" if c.startswith("6") else "sz")+c for c in codes]
@@ -408,6 +478,9 @@ def score_v8i(quote, kls, market_idx_kls=None, ki=None):
     market_idx_kls: index kline data for market state
     Returns: (score, details_dict, advice)"""
     
+    # Guard: empty klines
+    if not kls or len(kls) == 0:
+        return 0, {"filter": "No kline data"}, "??"
     # Extract data from kls (last entry is current day)
     if ki is None: ki = len(kls) - 1
     close = kls[ki]["close"]
@@ -640,9 +713,19 @@ def score_v8i(quote, kls, market_idx_kls=None, ki=None):
     return final_score, details, advice
 
 
-def score_v8i_live(quote, kls):
-    """Compatibility wrapper - delegates to score_v8i"""
-    idx_kls = fetch_kline_sina("sh000001", 60)
+_idx_kls_cache = None
+_idx_kls_cache_time = 0
+
+def score_v8i_live(quote, kls, idx_kls=None):
+    """Compatibility wrapper - delegates to score_v8i. Use cached idx_kls when provided."""
+    global _idx_kls_cache, _idx_kls_cache_time
+    if idx_kls is None:
+        # Use cached index klines (refresh every 60 seconds)
+        now = time.time()
+        if _idx_kls_cache is None or now - _idx_kls_cache_time > 60:
+            _idx_kls_cache = fetch_kline_sina("sh000001", 60)
+            _idx_kls_cache_time = now
+        idx_kls = _idx_kls_cache
     return score_v8i(quote, kls, idx_kls)
 
 
@@ -1043,14 +1126,18 @@ def screen(ms=35, topn=50, date_str=None):
         results.sort(key=lambda x:x["score"],reverse=True)
         return results[:topn]
     else:
-        PROGRESS["total"]=len(stocks); PROGRESS["done"]=0; PROGRESS["msg"]="Fetching real-time quotes..."
-        quotes=get_quotes(codes)
+        # Limit to top stocks for live scanning (symbol-sorted ~= importance)
+        scan_limit = len(stocks)  # full stock pool
+        scan_stocks = stocks[:scan_limit]
+        scan_codes = [c for c,_ in scan_stocks]
+        PROGRESS["total"]=len(scan_stocks); PROGRESS["done"]=0; PROGRESS["msg"]="Fetching real-time quotes..."
+        quotes=get_quotes(scan_codes)
         PROGRESS["msg"]=f"Got {len(quotes)} quotes, fetching kline data..."
         
         results=[]
         # Step 1: fast filter using quotes
         candidates=[]
-        for code,name in stocks:
+        for code,name in scan_stocks:
             if code not in quotes: continue
             d=quotes[code]
             p=f(d.get("price",0)); yc=f(d.get("yclose",0))
@@ -1066,24 +1153,46 @@ def screen(ms=35, topn=50, date_str=None):
         PROGRESS["msg"]=f"Fast-filtered {len(candidates)} candidates, deep scoring..."
         
         # Step 2: deep score with kline data for candidates
-        # Fetch kline for all candidates in parallel
+        # Use daily cache when available (massive speedup for mobile)
         kline_map={}
-        def fetch_one(code):
-            sym=("sh" if code.startswith("6") else "sz")+code
-            return code, fetch_kline_sina(sym, 60)
+        cached_count = 0
+        to_fetch = []
+        for code,name,d in candidates[:300]:
+            cached = get_cached_klines(code)
+            if cached:
+                kline_map[code] = cached
+                cached_count += 1
+            else:
+                to_fetch.append(code)
         
-        with ThreadPoolExecutor(max_workers=15) as ex:
-            futs={ex.submit(fetch_one,c):c for c,*_ in [x for x in candidates[:300]]}
-            for i,fut in enumerate(as_completed(futs)):
-                code,kls=fut.result()
-                if kls: kline_map[code]=kls
-                if (i+1)%100==0: PROGRESS["msg"]=f"Deep scored {i+1}/{len(candidates[:300])}..."
+        if to_fetch:
+            PROGRESS["msg"]=f"Cache hit {cached_count}/{len(candidates[:300])}, fetching {len(to_fetch)}..."
+            def fetch_one(code):
+                sym=("sh" if code.startswith("6") else "sz")+code
+                return code, fetch_kline_sina(sym, 60)
+            
+            with ThreadPoolExecutor(max_workers=25) as ex:
+                futs={ex.submit(fetch_one,c):c for c in to_fetch}
+                for i,fut in enumerate(as_completed(futs)):
+                    code,kls=fut.result()
+                    if kls: kline_map[code]=kls; _add_kline_to_cache(code, kls)
+                    if (i+1)%100==0:
+                        PROGRESS["done"]=cached_count+i+1
+                        PROGRESS["total"]=len(candidates[:300])
+                        PROGRESS["msg"]=f"K-line {cached_count+i+1}/{len(candidates[:300])}..."
+        else:
+            PROGRESS["msg"]=f"All {len(candidates[:300])} klines from cache!"
         
+        PROGRESS["total"]=len(candidates)
+        PROGRESS["done"]=0
         PROGRESS["msg"]=f"Scoring {len(candidates)} stocks..."
         
-        for code,name,d in candidates:
+        # Fetch index klines once for all candidates
+        idx_kls_cached = fetch_kline_sina("sh000001", 60)
+        for i,(code,name,d) in enumerate(candidates):
             kls=kline_map.get(code, [])
-            sc,det,timing=score_v8i_live(d, kls)
+            if not kls: continue
+            sc,det,timing=score_v8i_live(d, kls, idx_kls_cached)
             if sc>=ms:
                 results.append({
                     "code":code,"name":name,"score":sc,
@@ -1097,10 +1206,16 @@ def screen(ms=35, topn=50, date_str=None):
                     "risk":det.get("filter","") if det.get("filter") else "",
                     "details":det
                 })
-            PROGRESS["done"]=len(results)
+            if (i+1) % 50 == 0:
+                PROGRESS["done"]=i+1
+                PROGRESS["msg"]=f"Scored {i+1}/{len(candidates)}, found {len(results)}"
         
         results.sort(key=lambda x:x["score"],reverse=True)
         PROGRESS["msg"]=f"Done! {len(results[:topn])} results"
+        # Save fetched klines to daily cache for faster subsequent scans
+        for code, kls in kline_map.items():
+            _add_kline_to_cache(code, kls)
+        _save_daily_cache()
         return results[:topn]
 
 def _load_html():
@@ -1121,9 +1236,19 @@ class H(BaseHTTPRequestHandler):
     def log_message(self,*a): pass
     def _s(self,b,ct="text/html; charset=utf-8",code=200):
         b=b.encode("utf-8") if isinstance(b,str) else b
+        # Gzip compression for responses > 1KB
+        accept_enc = self.headers.get("Accept-Encoding","")
+        use_gzip = "gzip" in accept_enc.lower() and len(b) > 1024
+        if use_gzip:
+            buf = io.BytesIO()
+            with gzip.GzipFile(fileobj=buf, mode="wb", compresslevel=4) as gf:
+                gf.write(b)
+            b = buf.getvalue()
         self.send_response(code)
         self.send_header("Content-Type",ct)
         self.send_header("Access-Control-Allow-Origin","*")
+        if use_gzip:
+            self.send_header("Content-Encoding","gzip")
         self.send_header("Content-Length",str(len(b)))
         self.end_headers()
         self.wfile.write(b)
