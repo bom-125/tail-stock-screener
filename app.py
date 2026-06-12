@@ -63,11 +63,11 @@ def send_email(subject, body):
     """Send email via SMTP. Configure via env vars."""
     import smtplib
     from email.mime.text import MIMEText
-    smtp_host = os.environ.get("SMTP_HOST", "")
+    smtp_host = os.environ.get("SMTP_HOST", "smtp.qq.com")
     smtp_port = int(os.environ.get("SMTP_PORT", "587"))
-    smtp_user = os.environ.get("SMTP_USER", "")
+    smtp_user = os.environ.get("SMTP_USER", "1101600259@qq.com")
     smtp_pass = os.environ.get("SMTP_PASS", "")
-    smtp_to = os.environ.get("SMTP_TO", "")
+    smtp_to = os.environ.get("SMTP_TO", "1101600259@qq.com")
     if not all([smtp_host, smtp_user, smtp_pass, smtp_to]):
         print("[Email] Not configured, skip")
         return False
@@ -86,7 +86,7 @@ def send_email(subject, body):
         print("[Email] Failed: {}".format(e))
         return False
 
-# ---- Scheduled 14:30 Auto-Scan ----
+# ---- Scheduled 14:45 Auto-Scan ----
 def is_trading_day():
     """Check if today is a trading day (Mon-Fri, not holiday)."""
     import datetime
@@ -96,7 +96,7 @@ def is_trading_day():
     return True
 
 def scheduled_scan_loop():
-    """Background thread: check time, auto-scan at 14:30 daily."""
+    """Background thread: check time, auto-scan at 14:45 daily."""
     import datetime, time as _time
     last_scan_date = None
     while True:
@@ -105,9 +105,9 @@ def scheduled_scan_loop():
             today_str = now.strftime("%Y-%m-%d")
             hm = now.hour * 100 + now.minute
             
-            # Check if 14:30-14:35 and not scanned today
-            if 1430 <= hm < 1435 and is_trading_day() and last_scan_date != today_str:
-                print("[Scheduler] 14:30 auto-scan triggered")
+            # Check if 14:45-14:35 and not scanned today
+            if 1445 <= hm < 1450 and is_trading_day() and last_scan_date != today_str:
+                print("[Scheduler] 14:45 auto-scan triggered")
                 results = _scan_async(ms=30, topn=20, date_str=None)
                 last_scan_date = today_str
                 
@@ -119,7 +119,7 @@ def scheduled_scan_loop():
                         rows += "<tr><td>{}</td><td>{} {}</td><td>{}</td><td>{}</td><td>{}</td></tr>".format(
                             i+1, r["code"], r["name"], r["score"], chg_str, r.get("advice", ""))
                     body = """<h2>{} ??????</h2>
-                    <p>???????14:30 | ???? {} ????</p>
+                    <p>???????14:45 | ???? {} ????</p>
                     <table border='1' cellpadding='6' style='border-collapse:collapse'>
                     <tr><th>#</th><th>??</th><th>??</th><th>??</th><th>??</th></tr>
                     {}
@@ -1301,7 +1301,7 @@ def screen(ms=35, topn=50, date_str=None):
             market_label = details.get("market_label", "SIDEWAYS")
             
             # Buy timing
-            buy_timing = "??14:30???"
+            buy_timing = "??14:45???"
             if advice == "??" and market_label == "BULLISH+":
                 buy_timing = "???????????"
             elif advice == "??":
@@ -1309,7 +1309,7 @@ def screen(ms=35, topn=50, date_str=None):
             elif advice == "??" and market_label == "BULLISH+":
                 buy_timing = "?????????????"
             elif advice == "??":
-                buy_timing = "????14:30???"
+                buy_timing = "????14:45???"
             elif advice == "??":
                 buy_timing = "????15??????"
             elif advice == "??":
