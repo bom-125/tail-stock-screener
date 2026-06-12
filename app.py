@@ -1707,6 +1707,19 @@ class H(BaseHTTPRequestHandler):
             else:
                 self._s(json.dumps(load_holdings(),ensure_ascii=False),"application/json; charset=utf-8")
 
+        elif self.path.startswith("/api/quotes"):
+            qs=parse_qs(urlparse(self.path).query)
+            code=qs.get("code",[""])[0]
+            if code:
+                try:
+                    quotes=get_quotes([code])
+                    q=quotes.get(code,{})
+                    self._s(json.dumps({"code":code,"name":q.get("name",""),"price":q.get("price","0")},ensure_ascii=False),"application/json; charset=utf-8")
+                except:
+                    self._s(json.dumps({"error":"fetch failed"},ensure_ascii=False),"application/json; charset=utf-8")
+            else:
+                self._s(json.dumps({"error":"no code"},ensure_ascii=False),"application/json; charset=utf-8")
+        
         elif self.path.startswith("/api/alerts"):
             self._s(json.dumps(MONITOR_ALERTS,ensure_ascii=False),"application/json; charset=utf-8")
         

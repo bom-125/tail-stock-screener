@@ -102,11 +102,11 @@ input:focus{outline:none;border-color:var(--accent)}
     </div>
     <div id="add-form" style="display:none;margin-bottom:12px;padding:12px;background:var(--card);border-radius:10px;border:1px solid var(--border)">
       <div class="form-row">
-        <input placeholder="代码(600900)" id="add-code">
+        <input placeholder="代码(600900)" id="add-code" onblur="autoFillName()">
         <input placeholder="名称" id="add-name">
         <input placeholder="买入价" id="add-price" type="number" step="0.01">
         <input placeholder="股数" id="add-shares" type="number" step="100">
-        <input placeholder="买入日期" id="add-date" type="date">
+        <input placeholder="买入日期(计算持有天数)" id="add-date" title="用于计算持有天数，影响到期平仓和走弱判断" type="date">
         <button class="btn btn-sm btn-primary" onclick="addHolding()">确认添加</button>
         <button class="btn btn-sm" onclick="toggleAddForm()" style="background:var(--border);color:var(--text)">取消</button>
       </div>
@@ -172,6 +172,21 @@ function switchTab(tab){
   document.getElementById("panel-alerts").classList.toggle("active",tab==="alerts");
   if(tab==="holdings")refreshHoldings();
   if(tab==="alerts")refreshAlerts();
+}
+
+function autoFillName(){
+  var code=document.getElementById("add-code").value.trim();
+  if(code.length<6)return;
+  var xhr=new XMLHttpRequest();
+  xhr.open("GET","/api/quotes?code="+code,true);
+  xhr.timeout=5000;
+  xhr.onload=function(){
+    try{
+      var d=JSON.parse(xhr.responseText);
+      if(d.name)document.getElementById("add-name").value=d.name;
+    }catch(e){}
+  };
+  xhr.send();
 }
 
 function toggleAddForm(){
